@@ -547,7 +547,7 @@ export default function NormalDistributionCalculator() {
             <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-200">
               <Calculator size={24} />
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-800">מחשבון התפלגות נורמלית</h1>
+            <h1 className="text-xl font-bold tracking-tight text-slate-800">מחשבון התפלגות נורמלית מתקדם</h1>
           </div>
           <div className="flex items-center gap-2 text-slate-500 text-sm">
             <Info size={16} />
