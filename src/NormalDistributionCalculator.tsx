@@ -320,7 +320,7 @@ const FormattedStep: React.FC<{ text: string }> = ({ text }) => {
   const parts = text.split(/\[MATH\](.*?)\[\/MATH\]/g);
 
   return (
-    <div className={`text-slate-700 leading-relaxed font-sans text-sm md:text-base ${isResult ? 'font-bold text-blue-800 bg-blue-50/50 p-3 rounded-xl border border-blue-100 shadow-sm' : ''}`}>
+    <div className={`text-slate-900 leading-relaxed font-sans font-medium text-sm md:text-base ${isResult ? 'font-bold text-blue-900 bg-blue-50/50 p-3 rounded-xl border border-blue-200 shadow-sm' : ''}`}>
       {parts.map((part, i) => {
         if (i % 2 === 1) {
           return <span key={i} dir="ltr" className="inline-block mx-1"><InlineMath math={part} /></span>;
@@ -567,27 +567,27 @@ export default function NormalDistributionCalculator() {
             
             <div className="grid grid-cols-2 gap-4 mb-8">
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700">תוחלת (μ)</label>
+                <label className="text-sm font-bold text-slate-800">תוחלת (μ)</label>
                 <input 
                   type="number" 
                   value={mean} 
                   onChange={(e) => setMean(Number(e.target.value))}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-medium text-slate-800"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700">סטיית תקן (σ)</label>
+                <label className="text-sm font-bold text-slate-800">סטיית תקן (σ)</label>
                 <input 
                   type="number" 
                   value={stdDev} 
                   min="0.0001"
                   onChange={(e) => setStdDev(Math.max(0.0001, Number(e.target.value)))}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-medium text-slate-800"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
                 />
               </div>
             </div>
 
-            <h2 className="text-lg font-semibold mb-4">סוג החישוב</h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">סוג החישוב</h2>
             <div className="grid grid-cols-2 gap-2 mb-8">
               {[
                 { id: 'below', label: 'מתחת ל-X' },
@@ -633,14 +633,14 @@ export default function NormalDistributionCalculator() {
                   </div>
 
                   <div className="space-y-4 border-t border-blue-100 pt-4">
-                    <h3 className="text-sm font-bold text-blue-700">מאורע B (התנאי):</h3>
+                    <h3 className="text-sm font-bold text-blue-800">מאורע B (התנאי):</h3>
                     <div className="grid grid-cols-1 gap-4">
                       <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">סוג התנאי:</label>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">סוג התנאי:</label>
                         <select 
                           value={condType}
                           onChange={(e) => setCondType(e.target.value as CondType)}
-                          className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none"
+                          className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
                         >
                           <option value="below">X &lt; x</option>
                           <option value="above">X &gt; x</option>
@@ -649,22 +649,22 @@ export default function NormalDistributionCalculator() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 mb-1">{condType === 'between' ? 'x1:' : 'ערך x:'}</label>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">{condType === 'between' ? 'x1:' : 'ערך x:'}</label>
                           <input 
                             type="number" 
                             value={condX1} 
                             onChange={(e) => setCondX1(Number(e.target.value))}
-                            className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none"
+                            className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
                           />
                         </div>
                         {condType === 'between' && (
                           <div>
-                            <label className="block text-xs font-bold text-slate-500 mb-1">x2:</label>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">x2:</label>
                             <input 
                               type="number" 
                               value={condX2} 
                               onChange={(e) => setCondX2(Number(e.target.value))}
-                              className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none"
+                              className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
                             />
                           </div>
                         )}
@@ -675,14 +675,14 @@ export default function NormalDistributionCalculator() {
               ) : (
                 <>
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">
+                    <label className="text-sm font-bold text-slate-800">
                       {type === 'between' || type === 'outside' ? 'ערך X₁' : 'ערך X'}
                     </label>
                     <input 
                       type="number" 
                       value={x1} 
                       onChange={(e) => setX1(Number(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-medium text-slate-800"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
                     />
                   </div>
                   
@@ -692,12 +692,12 @@ export default function NormalDistributionCalculator() {
                       animate={{ opacity: 1, y: 0 }}
                       className="space-y-2"
                     >
-                      <label className="text-sm font-semibold text-slate-700">ערך X₂</label>
+                      <label className="text-sm font-bold text-slate-800">ערך X₂</label>
                       <input 
                         type="number" 
                         value={x2} 
                         onChange={(e) => setX2(Number(e.target.value))}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-medium text-slate-800"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
                       />
                     </motion.div>
                   )}
@@ -760,8 +760,8 @@ export default function NormalDistributionCalculator() {
         </section>
       </main>
 
-      <footer className="max-w-5xl mx-auto px-4 py-12 text-center text-slate-400 text-sm">
-        <p>© {new Date().getFullYear()} מחשבון התפלגות נורמלית - פותח עבור סטודנטים לסטטיסטיקה</p>
+      <footer className="max-w-5xl mx-auto px-4 py-12 text-center text-slate-500 text-sm font-bold">
+        <p>© {new Date().getFullYear()} מחשבון התפלגות נורמלית - כל הזכויות שמורות לרוברט תיגר</p>
       </footer>
     </div>
   );
