@@ -51,8 +51,27 @@ function normalPDF(x: number, mean: number, stdDev: number): number {
   return (1 / (stdDev * Math.sqrt(2 * Math.PI))) * Math.exp(exponent);
 }
 
+/**
+ * Inverse Standard Normal Cumulative Distribution Function
+ * Rational approximation for Z-score from probability
+ */
+function inverseNormalCDF(p: number): number {
+  if (p <= 0) return -5;
+  if (p >= 1) return 5;
+
+  // Rational approximation
+  const c = [2.515517, 0.802853, 0.010328];
+  const d = [1.432788, 0.189269, 0.001308];
+
+  const t = p < 0.5 ? Math.sqrt(-2.0 * Math.log(p)) : Math.sqrt(-2.0 * Math.log(1.0 - p));
+  const z = t - ((c[2] * t + c[1]) * t + c[0]) / (((d[2] * t + d[1]) * t + d[0]) * t + 1.0);
+
+  return p < 0.5 ? -z : z;
+}
+
 // --- Types ---
 
+type CalcMode = 'forward' | 'inverse';
 type CalcType = 'below' | 'above' | 'between' | 'outside' | 'conditional';
 type CondType = 'below' | 'above' | 'between';
 
@@ -61,6 +80,7 @@ interface CalculationResult {
   z1: number;
   z2?: number;
   steps: string[];
+  calculatedX?: number;
 }
 
 // --- Components ---
@@ -74,7 +94,9 @@ const NormalChart: React.FC<{
   condType?: CondType;
   condX1?: number;
   condX2?: number;
-}> = ({ mean, stdDev, type, x1, x2, condType, condX1, condX2 }) => {
+  probability: number;
+  mode?: CalcMode;
+}> = ({ mean, stdDev, type, x1, x2, condType, condX1, condX2, probability, mode }) => {
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -123,100 +145,84 @@ const NormalChart: React.FC<{
       .y1(d => yScale(d[1]))
       .curve(d3.curveBasis);
 
-    const getShadedPoints = () => {
-      switch (type) {
-        case 'below':
-          return points.filter(p => p[0] <= x1);
-        case 'above':
-          return points.filter(p => p[0] >= x1);
-        case 'between':
-          const start = Math.min(x1, x2);
-          const end = Math.max(x1, x2);
-          return points.filter(p => p[0] >= start && p[0] <= end);
-        case 'outside':
-          const s = Math.min(x1, x2);
-          const e = Math.max(x1, x2);
-          return [points.filter(p => p[0] <= s), points.filter(p => p[0] >= e)];
-        case 'conditional':
-          if (!condType || condX1 === undefined) return points.filter(p => p[0] <= x1);
-          
-          const getRange = (t: string, v1: number, v2: number): [number, number] => {
-            if (t === 'below') return [-Infinity, v1];
-            if (t === 'above') return [v1, Infinity];
-            return [Math.min(v1, v2), Math.max(v1, v2)];
-          };
+    if (type === 'conditional') {
+      const getRange = (t: string | undefined, v1: number | undefined, v2: number | undefined): [number, number] => {
+        const val1 = v1 ?? 0;
+        const val2 = v2 ?? 0;
+        if (t === 'below') return [-Infinity, val1];
+        if (t === 'above') return [val1, Infinity];
+        if (t === 'between') return [Math.min(val1, val2), Math.max(val1, val2)];
+        return [-Infinity, Infinity];
+      };
 
-          const rangeA = getRange('below', x1, x2); 
-          const rangeB = getRange(condType, condX1, condX2);
+      const rA = getRange('below', x1, x2); 
+      const rB = getRange(condType, condX1, condX2);
 
-          const intersectStart = Math.max(rangeA[0], rangeB[0]);
-          const intersectEnd = Math.min(rangeA[1], rangeB[1]);
-
-          return points.filter(p => p[0] >= intersectStart && p[0] <= intersectEnd);
-      }
-    };
-
-    const shaded = getShadedPoints();
-
-    if (Array.isArray(shaded[0]) && Array.isArray(shaded[0][0])) {
-      // Outside case (two areas)
-      (shaded as [number, number][][]).forEach(pts => {
+      // Layer 1: The condition (Event B) - Background layer
+      const bStart = Math.max(xMin, rB[0]);
+      const bEnd = Math.min(xMax, rB[1]);
+      
+      if (bStart < bEnd) {
+        const pointsB = points.filter(p => p[0] >= bStart && p[0] <= bEnd);
         g.append('path')
-          .datum(pts)
+          .datum(pointsB)
+          .attr('fill', 'rgba(16, 185, 129, 0.15)') // Light green for condition
+          .attr('d', area);
+      }
+
+      // Layer 2: The intersection (Event A ∩ B) - Foreground layer
+      const intersectStart = Math.max(rA[0], rB[0]);
+      const intersectEnd = Math.min(rA[1], rB[1]);
+      
+      const iStart = Math.max(xMin, intersectStart);
+      const iEnd = Math.min(xMax, intersectEnd);
+
+      if (iStart < iEnd) {
+        const pointsAandB = points.filter(p => p[0] >= iStart && p[0] <= iEnd);
+        g.append('path')
+          .datum(pointsAandB)
+          .attr('fill', 'rgba(37, 99, 235, 0.5)') // Blue for intersection
+          .attr('d', area);
+      }
+    } else {
+      const getShadedPoints = () => {
+        switch (type) {
+          case 'below':
+            return points.filter(p => p[0] <= x1);
+          case 'above':
+            return points.filter(p => p[0] >= x1);
+          case 'between':
+            const start = Math.min(x1, x2);
+            const end = Math.max(x1, x2);
+            return points.filter(p => p[0] >= start && p[0] <= end);
+          case 'outside':
+            const s = Math.min(x1, x2);
+            const e = Math.max(x1, x2);
+            return [points.filter(p => p[0] <= s), points.filter(p => p[0] >= e)];
+          default:
+            return [];
+        }
+      };
+
+      const shaded = getShadedPoints();
+
+      if (Array.isArray(shaded[0]) && Array.isArray(shaded[0][0])) {
+        // Outside case (two areas)
+        (shaded as [number, number][][]).forEach(pts => {
+          g.append('path')
+            .datum(pts)
+            .attr('fill', 'rgba(59, 130, 246, 0.3)')
+            .attr('d', area);
+        });
+      } else if (shaded.length > 0) {
+        g.append('path')
+          .datum(shaded as [number, number][])
           .attr('fill', 'rgba(59, 130, 246, 0.3)')
           .attr('d', area);
-      });
-    } else if (shaded.length > 0) {
-      g.append('path')
-        .datum(shaded as [number, number][])
-        .attr('fill', 'rgba(59, 130, 246, 0.3)')
-        .attr('d', area);
+      }
     }
 
     // Calculate and display percentage
-    let probability = 0;
-    if (type === 'below') {
-      probability = normalCDF(x1, mean, stdDev);
-    } else if (type === 'above') {
-      probability = 1 - normalCDF(x1, mean, stdDev);
-    } else if (type === 'between') {
-      probability = Math.abs(normalCDF(x2, mean, stdDev) - normalCDF(x1, mean, stdDev));
-    } else if (type === 'outside') {
-      const minX = Math.min(x1, x2);
-      const maxX = Math.max(x1, x2);
-      probability = normalCDF(minX, mean, stdDev) + (1 - normalCDF(maxX, mean, stdDev));
-    } else if (type === 'conditional' && condType && condX1 !== undefined) {
-      const getProb = (t: string, v1: number, v2: number) => {
-        if (t === 'below') return normalCDF(v1, mean, stdDev);
-        if (t === 'above') return 1 - normalCDF(v1, mean, stdDev);
-        if (t === 'between') return Math.abs(normalCDF(v2, mean, stdDev) - normalCDF(v1, mean, stdDev));
-        return 0;
-      };
-
-      const probB = getProb(condType, condX1, condX2 || 0);
-      
-      const getRange = (t: string, v1: number, v2: number): [number, number] => {
-        if (t === 'below') return [-Infinity, v1];
-        if (t === 'above') return [v1, Infinity];
-        return [Math.min(v1, v2), Math.max(v1, v2)];
-      };
-
-      const rangeA = getRange('below', x1, x2); 
-      const rangeB = getRange(condType, condX1, condX2 || 0);
-
-      const intersectStart = Math.max(rangeA[0], rangeB[0]);
-      const intersectEnd = Math.min(rangeA[1], rangeB[1]);
-
-      let probAandB = 0;
-      if (intersectStart < intersectEnd) {
-        const pStart = intersectStart === -Infinity ? 0 : normalCDF(intersectStart, mean, stdDev);
-        const pEnd = intersectEnd === Infinity ? 1 : normalCDF(intersectEnd, mean, stdDev);
-        probAandB = pEnd - pStart;
-      }
-
-      probability = probB > 0 ? probAandB / probB : 0;
-    }
-
     g.append('text')
       .attr('x', width / 2)
       .attr('y', -10)
@@ -283,6 +289,8 @@ const NormalChart: React.FC<{
       if (condType === 'between' && condX2 !== undefined) {
         drawXLine(condX2, '#10b981', `B: X<${condX2.toFixed(2)}`, 65);
       }
+    } else if (mode === 'inverse') {
+      drawXLine(x1, '#2563eb', `X=${x1.toFixed(2)}`, 25);
     } else {
       // Draw input X values with potential offset to avoid overlap
       const x1Offset = Math.abs(x1 - mean) < (xMax - xMin) * 0.1 ? 45 : 25;
@@ -304,7 +312,7 @@ const NormalChart: React.FC<{
       }
     }
 
-  }, [mean, stdDev, type, x1, x2]);
+  }, [mean, stdDev, type, x1, x2, condType, condX1, condX2, probability, mode]);
 
   return (
     <div className="w-full bg-white rounded-xl p-4 shadow-sm border border-slate-100 overflow-hidden">
@@ -323,7 +331,7 @@ const FormattedStep: React.FC<{ text: string }> = ({ text }) => {
     <div className={`text-slate-900 leading-relaxed font-sans font-medium text-sm md:text-base ${isResult ? 'font-bold text-blue-900 bg-blue-50/50 p-3 rounded-xl border border-blue-200 shadow-sm' : ''}`}>
       {parts.map((part, i) => {
         if (i % 2 === 1) {
-          return <span key={i} dir="ltr" className="inline-block mx-1"><InlineMath math={part} /></span>;
+          return <span key={i} dir="ltr" className="inline-block mx-1 font-bold"><InlineMath math={part} /></span>;
         }
         return <span key={i}>{part}</span>;
       })}
@@ -389,22 +397,42 @@ const ZTable: React.FC<{ activeZ: number | null }> = ({ activeZ }) => {
 };
 
 export default function NormalDistributionCalculator() {
-  const [mean, setMean] = useState<number>(0);
-  const [stdDev, setStdDev] = useState<number>(1);
+  const [mode, setMode] = useState<CalcMode>('forward');
+  const [mean, setMean] = useState<number>(170);
+  const [stdDev, setStdDev] = useState<number>(5);
   const [type, setType] = useState<CalcType>('below');
-  const [x1, setX1] = useState<number>(0);
-  const [x2, setX2] = useState<number>(1);
+  const [x1, setX1] = useState<number>(165);
+  const [x2, setX2] = useState<number>(175);
   const [condType, setCondType] = useState<CondType>('above');
-  const [condX1, setCondX1] = useState<number>(0);
-  const [condX2, setCondX2] = useState<number>(1);
+  const [condX1, setCondX1] = useState<number>(160);
+  const [condX2, setCondX2] = useState<number>(180);
+  const [percentile, setPercentile] = useState<number>(90);
 
   const result = useMemo((): CalculationResult => {
+    const steps: string[] = [];
+    steps.push(`נתונים: [MATH]\\mu = ${mean}, \\sigma = ${stdDev}[/MATH]`);
+
+    if (mode === 'inverse') {
+      const p = percentile / 100;
+      const z = inverseNormalCDF(p);
+      const x = mean + z * stdDev;
+      
+      steps.push(`נבצע חישוב הפוך (מציאת ערך X לפי אחוזון):`);
+      steps.push(`שלב 1: מציאת ערך ה-Z המתאים להסתברות המצטברת [MATH]P = ${p}[/MATH] מטבלת ה-Z:`);
+      steps.push(`[MATH]\\mathbf{Z = \\Phi^{-1}(${p}) = ${z.toFixed(4)}}[/MATH]`);
+      steps.push(`שלב 2: שימוש בנוסחת ה"תקנון" (בצורה הפוכה) למציאת [MATH]X[/MATH]:`);
+      steps.push(`[MATH]\\mathbf{X = \\mu + Z \\cdot \\sigma}[/MATH]`);
+      steps.push(`נציב את הנתונים:`);
+      steps.push(`[MATH]\\mathbf{X = ${mean} + (${z.toFixed(4)}) \\cdot ${stdDev}}[/MATH]`);
+      steps.push(`[MATH]\\mathbf{X = ${x.toFixed(4)}}[/MATH]`);
+      steps.push(`תוצאה סופית: הערך המבוקש עבור האחוזון ה-${percentile} הוא [MATH]\\mathbf{X = ${x.toFixed(4)}}[/MATH]`);
+      
+      return { probability: p, z1: z, steps, calculatedX: x };
+    }
+
     const z1 = (x1 - mean) / stdDev;
     const z2 = (x2 - mean) / stdDev;
     let prob = 0;
-    const steps: string[] = [];
-
-    steps.push(`נתונים: [MATH]\\mu = ${mean}, \\sigma = ${stdDev}[/MATH]`);
 
     if (type === 'conditional') {
       // P(A | B) = P(A and B) / P(B)
@@ -486,36 +514,35 @@ export default function NormalDistributionCalculator() {
         return { probability: prob, z1: sZ, z2: eZ, steps };
 
       case 'conditional':
-        // Event A: defined by x1 (and x2 if between)
-        // For simplicity in UI, let's make A always 'below' or 'above' or 'between' based on a sub-selector
-        // But for now, let's use the main x1, x2 and a fixed 'above' for A for demo, or better:
-        // Let's use x1, x2 for Event A (below/above/between) and condX1, condX2 for Event B
-        
-        const getProb = (t: string, v1: number, v2: number) => {
-          if (t === 'below') return normalCDF(v1, mean, stdDev);
-          if (t === 'above') return 1 - normalCDF(v1, mean, stdDev);
-          if (t === 'between') return Math.abs(normalCDF(v2, mean, stdDev) - normalCDF(v1, mean, stdDev));
-          return 0;
-        };
-
-        const probB = getProb(condType, condX1, condX2);
-        
-        // Intersection A and B
-        // This is tricky to automate for all cases, let's do common ones or use a numeric integration/sampling
-        // Or just define A as a range [a1, a2] and B as [b1, b2]
         const getRange = (t: string, v1: number, v2: number): [number, number] => {
           if (t === 'below') return [-Infinity, v1];
           if (t === 'above') return [v1, Infinity];
           return [Math.min(v1, v2), Math.max(v1, v2)];
         };
 
-        const rangeA = getRange('below', x1, x2); // Defaulting A to 'below' for now in logic, will add UI toggle
-        const rangeB = getRange(condType, condX1, condX2);
+        const rA = getRange('below', x1, x2); 
+        const rB = getRange(condType, condX1, condX2);
 
-        const intersectStart = Math.max(rangeA[0], rangeB[0]);
-        const intersectEnd = Math.min(rangeA[1], rangeB[1]);
+        const intersectStart = Math.max(rA[0], rB[0]);
+        const intersectEnd = Math.min(rA[1], rB[1]);
 
+        // Calculate probabilities using Z-scores
+        const getZ = (x: number) => (x - mean) / stdDev;
+        
+        // Probability of B
+        let probB = 0;
+        const zB1 = rB[0] === -Infinity ? -Infinity : getZ(rB[0]);
+        const zB2 = rB[1] === Infinity ? Infinity : getZ(rB[1]);
+        
+        if (condType === 'below') probB = normalCDF(condX1, mean, stdDev);
+        else if (condType === 'above') probB = 1 - normalCDF(condX1, mean, stdDev);
+        else probB = Math.abs(normalCDF(condX2, mean, stdDev) - normalCDF(condX1, mean, stdDev));
+
+        // Probability of A and B
         let probAandB = 0;
+        const zI1 = intersectStart === -Infinity ? -Infinity : getZ(intersectStart);
+        const zI2 = intersectEnd === Infinity ? Infinity : getZ(intersectEnd);
+        
         if (intersectStart < intersectEnd) {
           const pStart = intersectStart === -Infinity ? 0 : normalCDF(intersectStart, mean, stdDev);
           const pEnd = intersectEnd === Infinity ? 1 : normalCDF(intersectEnd, mean, stdDev);
@@ -525,10 +552,45 @@ export default function NormalDistributionCalculator() {
         prob = probB > 0 ? probAandB / probB : 0;
 
         steps.push(`נחשב הסתברות מותנית לפי הנוסחה: [MATH]P(A|B) = \\frac{P(A \\cap B)}{P(B)}[/MATH]`);
-        steps.push(`מאורע B (התנאי): [MATH]X[/MATH] בטווח [MATH]${rangeB[0] === -Infinity ? '(-\\infty' : '[' + rangeB[0]}${','}${rangeB[1] === Infinity ? '\\infty)' : rangeB[1] + ']'}[/MATH]`);
-        steps.push(`[MATH]P(B) = ${probB.toFixed(4)}[/MATH]`);
-        steps.push(`החיתוך [MATH]A \\cap B[/MATH]: [MATH]X[/MATH] בטווח [MATH]${intersectStart === -Infinity ? '(-\\infty' : '[' + intersectStart}${','}${intersectEnd === Infinity ? '\\infty)' : intersectEnd + ']'}[/MATH]`);
-        steps.push(`[MATH]P(A \\cap B) = ${probAandB.toFixed(4)}[/MATH]`);
+        
+        steps.push(`שלב 1: נחשב את ההסתברות של התנאי [MATH]P(B)[/MATH] באמצעות סטנדרטיזציה:`);
+        if (condType === 'below') {
+          steps.push(`[MATH]Z_B = \\frac{${condX1} - ${mean}}{${stdDev}} = ${zB2.toFixed(4)}[/MATH]`);
+          steps.push(`[MATH]P(B) = P(X < ${condX1}) = P(Z < ${zB2.toFixed(4)}) = ${probB.toFixed(4)}[/MATH]`);
+        } else if (condType === 'above') {
+          steps.push(`[MATH]Z_B = \\frac{${condX1} - ${mean}}{${stdDev}} = ${zB1.toFixed(4)}[/MATH]`);
+          steps.push(`[MATH]P(B) = P(X > ${condX1}) = P(Z > ${zB1.toFixed(4)}) = ${probB.toFixed(4)}[/MATH]`);
+        } else {
+          steps.push(`[MATH]Z_{B1} = \\frac{${condX1} - ${mean}}{${stdDev}} = ${zB1.toFixed(4)}[/MATH]`);
+          steps.push(`[MATH]Z_{B2} = \\frac{${condX2} - ${mean}}{${stdDev}} = ${zB2.toFixed(4)}[/MATH]`);
+          steps.push(`[MATH]P(B) = P(${condX1} < X < ${condX2}) = P(${zB1.toFixed(4)} < Z < ${zB2.toFixed(4)}) = ${probB.toFixed(4)}[/MATH]`);
+        }
+
+        steps.push(`שלב 2: נחשב את הסתברות החיתוך [MATH]P(A \\cap B)[/MATH]:`);
+        
+        if (intersectStart < intersectEnd) {
+          steps.push(`החיתוך הוא הטווח המשותף: [MATH]${intersectStart === -Infinity ? '(-\\infty' : intersectStart} < X < ${intersectEnd === Infinity ? '\\infty)' : intersectEnd}[/MATH]`);
+          
+          if (intersectStart !== -Infinity && intersectEnd !== Infinity) {
+            steps.push(`נבצע סטנדרטיזציה לגבולות החיתוך:`);
+            steps.push(`[MATH]Z_{I1} = \\frac{${intersectStart} - ${mean}}{${stdDev}} = ${zI1.toFixed(4)}[/MATH]`);
+            steps.push(`[MATH]Z_{I2} = \\frac{${intersectEnd} - ${mean}}{${stdDev}} = ${zI2.toFixed(4)}[/MATH]`);
+            steps.push(`[MATH]P(A \\cap B) = P(${zI1.toFixed(4)} < Z < ${zI2.toFixed(4)}) = ${probAandB.toFixed(4)}[/MATH]`);
+          } else if (intersectStart !== -Infinity) {
+            steps.push(`נבצע סטנדרטיזציה לגבול החיתוך:`);
+            steps.push(`[MATH]Z_I = \\frac{${intersectStart} - ${mean}}{${stdDev}} = ${zI1.toFixed(4)}[/MATH]`);
+            steps.push(`[MATH]P(A \\cap B) = P(Z > ${zI1.toFixed(4)}) = ${probAandB.toFixed(4)}[/MATH]`);
+          } else {
+            steps.push(`נבצע סטנדרטיזציה לגבול החיתוך:`);
+            steps.push(`[MATH]Z_I = \\frac{${intersectEnd} - ${mean}}{${stdDev}} = ${zI2.toFixed(4)}[/MATH]`);
+            steps.push(`[MATH]P(A \\cap B) = P(Z < ${zI2.toFixed(4)}) = ${probAandB.toFixed(4)}[/MATH]`);
+          }
+        } else {
+          steps.push(`אין חיתוך בין המאורעות (הטווחים זרים).`);
+          steps.push(`[MATH]P(A \\cap B) = 0[/MATH]`);
+        }
+
+        steps.push(`שלב 3: נציב בנוסחת ההסתברות המותנית:`);
         steps.push(`[MATH]P(A|B) = \\frac{${probAandB.toFixed(4)}}{${probB.toFixed(4)}} = ${prob.toFixed(4)}[/MATH]`);
         steps.push(`תוצאה סופית: ההסתברות המותנית היא [MATH]${prob.toFixed(4)}[/MATH]`);
         
@@ -557,13 +619,40 @@ export default function NormalDistributionCalculator() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Tabs for Mode Selection */}
+        <div className="lg:col-span-12 flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm mb-2">
+          <button
+            onClick={() => setMode('forward')}
+            className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${
+              mode === 'forward' 
+                ? 'bg-blue-600 text-white shadow-md' 
+                : 'text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            חישוב הסתברות (X → P)
+          </button>
+          <button
+            onClick={() => setMode('inverse')}
+            className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${
+              mode === 'inverse' 
+                ? 'bg-blue-600 text-white shadow-md' 
+                : 'text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            חישוב ערך X (אחוזון → X)
+          </button>
+        </div>
+
         {/* Input Controls */}
         <section className="lg:col-span-5 space-y-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-            <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
+            <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
               <RefreshCw size={18} className="text-blue-600" />
               פרמטרים של ההתפלגות
             </h2>
+            <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+              דוגמה: גובה של נערים. מתפלג נורמלית, עם תוחלת של 170 ס"מ וסטיית תקן - 5 ס"מ.
+            </p>
             
             <div className="grid grid-cols-2 gap-4 mb-8">
               <div className="space-y-2">
@@ -611,7 +700,31 @@ export default function NormalDistributionCalculator() {
             </div>
 
             <div className="space-y-4">
-              {type === 'conditional' ? (
+              {mode === 'inverse' ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-4"
+                >
+                  <h2 className="text-lg font-bold text-slate-900">הזנת אחוזון</h2>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">הסתברות מצטברת (אחוזון) ב-%:</label>
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        value={percentile} 
+                        min="0.01"
+                        max="99.99"
+                        step="0.1"
+                        onChange={(e) => setPercentile(Math.min(99.99, Math.max(0.01, Number(e.target.value))))}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
+                      />
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400">לדוגמה: עשירון עליון = 90%, חציון = 50%</p>
+                  </div>
+                </motion.div>
+              ) : type === 'conditional' ? (
                 <motion.div 
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -707,9 +820,17 @@ export default function NormalDistributionCalculator() {
           </div>
 
           <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-xl shadow-blue-200">
-            <div className="text-blue-100 text-sm mb-1">הסתברות (P)</div>
-            <div className="text-4xl font-bold">{(result.probability * 100).toFixed(2)}%</div>
-            <div className="text-blue-100 text-xs mt-2">ערך עשרוני: {result.probability.toFixed(4)}</div>
+            <div className="text-blue-100 text-sm mb-1">{mode === 'inverse' ? 'ערך X המחושב' : 'הסתברות (P)'}</div>
+            <div className="text-4xl font-bold">
+              {mode === 'inverse' 
+                ? (result.calculatedX?.toFixed(4) ?? '0.0000')
+                : `${(result.probability * 100).toFixed(2)}%`}
+            </div>
+            <div className="text-blue-100 text-xs mt-2">
+              {mode === 'inverse' 
+                ? `עבור אחוזון ${percentile}%`
+                : `ערך עשרוני: ${result.probability.toFixed(4)}`}
+            </div>
           </div>
         </section>
 
@@ -723,12 +844,14 @@ export default function NormalDistributionCalculator() {
             <NormalChart 
               mean={mean} 
               stdDev={stdDev} 
-              type={type} 
-              x1={x1} 
+              type={mode === 'inverse' ? 'below' : type} 
+              x1={mode === 'inverse' ? (result.calculatedX ?? 0) : x1} 
               x2={x2} 
               condType={condType}
               condX1={condX1}
               condX2={condX2}
+              probability={result.probability}
+              mode={mode}
             />
           </div>
 
