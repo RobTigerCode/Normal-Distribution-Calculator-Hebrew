@@ -401,6 +401,7 @@ export default function NormalDistributionCalculator() {
   const [mean, setMean] = useState<number>(170);
   const [stdDev, setStdDev] = useState<number>(5);
   const [type, setType] = useState<CalcType>('below');
+  const [inverseType, setInverseType] = useState<'lower' | 'upper'>('lower');
   const [x1, setX1] = useState<number>(165);
   const [x2, setX2] = useState<number>(175);
   const [condType, setCondType] = useState<CondType>('above');
@@ -413,21 +414,31 @@ export default function NormalDistributionCalculator() {
     steps.push(`נתונים: [MATH]\\mu = ${mean}, \\sigma = ${stdDev}[/MATH]`);
 
     if (mode === 'inverse') {
-      const p = percentile / 100;
-      const z = inverseNormalCDF(p);
+      const pInput = percentile / 100;
+      // If upper, we want P(X > x) = pInput, which means P(X < x) = 1 - pInput
+      const pLookup = inverseType === 'lower' ? pInput : 1 - pInput;
+      const z = inverseNormalCDF(pLookup);
       const x = mean + z * stdDev;
       
-      steps.push(`נבצע חישוב הפוך (מציאת ערך X לפי אחוזון):`);
-      steps.push(`שלב 1: מציאת ערך ה-Z המתאים להסתברות המצטברת [MATH]P = ${p}[/MATH] מטבלת ה-Z:`);
-      steps.push(`[MATH]\\mathbf{Z = \\Phi^{-1}(${p}) = ${z.toFixed(4)}}[/MATH]`);
+      steps.push(`נבצע חישוב הפוך (מציאת ערך X לפי אחוזון ${inverseType === 'lower' ? 'תחתון' : 'עליון'}):`);
+      
+      if (inverseType === 'lower') {
+        steps.push(`שלב 1: מציאת ערך ה-Z המתאים להסתברות המצטברת [MATH]P(X < x) = ${pLookup.toFixed(4)}[/MATH] מטבלת ה-Z:`);
+      } else {
+        steps.push(`שלב 1: אנחנו מחפשים ערך [MATH]x[/MATH] כך שהשטח מימינו הוא [MATH]${pInput.toFixed(4)}[/MATH].`);
+        steps.push(`זה שקול למציאת ערך [MATH]x[/MATH] שהשטח משמאלו הוא [MATH]1 - ${pInput.toFixed(4)} = ${pLookup.toFixed(4)}[/MATH].`);
+        steps.push(`נחפש את ה-Z המתאים ל-[MATH]P(X < x) = ${pLookup.toFixed(4)}[/MATH] בטבלה:`);
+      }
+      
+      steps.push(`[MATH]\\mathbf{Z = \\Phi^{-1}(${pLookup.toFixed(4)}) = ${z.toFixed(4)}}[/MATH]`);
       steps.push(`שלב 2: שימוש בנוסחת ה"תקנון" (בצורה הפוכה) למציאת [MATH]X[/MATH]:`);
       steps.push(`[MATH]\\mathbf{X = \\mu + Z \\cdot \\sigma}[/MATH]`);
       steps.push(`נציב את הנתונים:`);
       steps.push(`[MATH]\\mathbf{X = ${mean} + (${z.toFixed(4)}) \\cdot ${stdDev}}[/MATH]`);
       steps.push(`[MATH]\\mathbf{X = ${x.toFixed(4)}}[/MATH]`);
-      steps.push(`תוצאה סופית: הערך המבוקש עבור האחוזון ה-${percentile} הוא [MATH]\\mathbf{X = ${x.toFixed(4)}}[/MATH]`);
+      steps.push(`תוצאה סופית: הערך המבוקש עבור אחוזון ${inverseType === 'lower' ? 'תחתון' : 'עליון'} של ${percentile}% הוא [MATH]\\mathbf{X = ${x.toFixed(4)}}[/MATH]`);
       
-      return { probability: p, z1: z, steps, calculatedX: x };
+      return { probability: pInput, z1: z, steps, calculatedX: x };
     }
 
     const z1 = (x1 - mean) / stdDev;
@@ -599,7 +610,7 @@ export default function NormalDistributionCalculator() {
       default:
         return { probability: 0, z1: 0, steps: [] };
     }
-  }, [mean, stdDev, type, x1, x2, condType, condX1, condX2]);
+  }, [mean, stdDev, type, x1, x2, condType, condX1, condX2, mode, percentile, inverseType]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100" dir="rtl">
@@ -676,28 +687,62 @@ export default function NormalDistributionCalculator() {
               </div>
             </div>
 
-            <h2 className="text-lg font-bold text-slate-900 mb-4">סוג החישוב</h2>
-            <div className="grid grid-cols-2 gap-2 mb-8">
-              {[
-                { id: 'below', label: 'מתחת ל-X' },
-                { id: 'above', label: 'מעל ל-X' },
-                { id: 'between', label: 'בין X₁ ל-X₂' },
-                { id: 'outside', label: 'מחוץ ל-X₁ ו-X₂' },
-                { id: 'conditional', label: 'הסתברות מותנית' }
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setType(item.id as CalcType)}
-                  className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                    type === item.id 
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-100' 
-                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
+            {mode === 'forward' ? (
+              <>
+                <h2 className="text-lg font-bold text-slate-900 mb-4">סוג החישוב</h2>
+                <div className="grid grid-cols-2 gap-2 mb-8">
+                  {[
+                    { id: 'below', label: 'מתחת ל-X' },
+                    { id: 'above', label: 'מעל ל-X' },
+                    { id: 'between', label: 'בין X₁ ל-X₂' },
+                    { id: 'outside', label: 'מחוץ ל-X₁ ו-X₂' },
+                    { id: 'conditional', label: 'הסתברות מותנית' }
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => setType(item.id as CalcType)}
+                      className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                        type === item.id 
+                          ? 'bg-blue-600 text-white shadow-md shadow-blue-100' 
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4 mb-8"
+              >
+                <h2 className="text-lg font-bold text-slate-900">סוג אחוזון</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setInverseType('lower')}
+                    className={`py-3 px-4 rounded-xl text-sm font-bold transition-all border ${
+                      inverseType === 'lower' 
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-100 border-blue-600' 
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    אחוזון תחתון
+                  </button>
+                  <button
+                    onClick={() => setInverseType('upper')}
+                    className={`py-3 px-4 rounded-xl text-sm font-bold transition-all border ${
+                      inverseType === 'upper' 
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-100 border-blue-600' 
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    אחוזון עליון
+                  </button>
+                </div>
+              </motion.div>
+            )}
 
             <div className="space-y-4">
               {mode === 'inverse' ? (
@@ -706,7 +751,6 @@ export default function NormalDistributionCalculator() {
                   animate={{ opacity: 1, y: 0 }}
                   className="space-y-4"
                 >
-                  <h2 className="text-lg font-bold text-slate-900">הזנת אחוזון</h2>
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-800">הסתברות מצטברת (אחוזון) ב-%:</label>
                     <div className="relative">
@@ -721,7 +765,11 @@ export default function NormalDistributionCalculator() {
                       />
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
                     </div>
-                    <p className="text-[10px] text-slate-400">לדוגמה: עשירון עליון = 90%, חציון = 50%</p>
+                    <p className="text-[10px] text-slate-400">
+                      {inverseType === 'lower' 
+                        ? 'לדוגמה: 90% תחתון = הערך ש-90% מהמקרים קטנים ממנו' 
+                        : 'לדוגמה: 10% עליון = הערך ש-10% מהמקרים גדולים ממנו'}
+                    </p>
                   </div>
                 </motion.div>
               ) : type === 'conditional' ? (
@@ -844,7 +892,7 @@ export default function NormalDistributionCalculator() {
             <NormalChart 
               mean={mean} 
               stdDev={stdDev} 
-              type={mode === 'inverse' ? 'below' : type} 
+              type={mode === 'inverse' ? (inverseType === 'lower' ? 'below' : 'above') : type} 
               x1={mode === 'inverse' ? (result.calculatedX ?? 0) : x1} 
               x2={x2} 
               condType={condType}
