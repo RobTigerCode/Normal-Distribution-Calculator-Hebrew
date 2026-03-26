@@ -657,35 +657,44 @@ export default function NormalDistributionCalculator() {
         {/* Input Controls */}
         <section className="lg:col-span-5 space-y-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-            <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <RefreshCw size={18} className="text-blue-600" />
               פרמטרים של ההתפלגות
             </h2>
-            <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-              דוגמה: גובה של נערים. מתפלג נורמלית, עם תוחלת של 170 ס"מ וסטיית תקן - 5 ס"מ.
-            </p>
-            
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-800">תוחלת (μ)</label>
+
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold text-slate-700 mr-1">תוחלת:</label>
                 <input 
                   type="number" 
                   value={mean} 
                   onChange={(e) => setMean(Number(e.target.value))}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-800">סטיית תקן (σ)</label>
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold text-slate-700 mr-1">סטיית תקן:</label>
                 <input 
                   type="number" 
                   value={stdDev} 
                   min="0.0001"
                   onChange={(e) => setStdDev(Math.max(0.0001, Number(e.target.value)))}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
                 />
               </div>
             </div>
+            
+            <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-100/50 shadow-sm flex items-center justify-center gap-2 sm:gap-3 overflow-x-auto" dir="ltr">
+              <div className="shrink-0 w-1.5 h-8 bg-blue-500 rounded-full" />
+              <span className="text-blue-800 font-black text-xl sm:text-2xl tracking-tight whitespace-nowrap">
+                <InlineMath math={`X \\sim N(\\mu = ${mean}, \\sigma^2 = ${(stdDev * stdDev).toFixed(2)})`} />
+              </span>
+              <div className="shrink-0 w-1.5 h-8 bg-indigo-500 rounded-full" />
+            </div>
+
+            <p className="text-xs text-slate-400 mb-8 leading-relaxed">
+              דוגמה: גובה של נערים. מתפלג נורמלית, עם תוחלת של 170 ס"מ וסטיית תקן - 5 ס"מ.
+            </p>
 
             {mode === 'forward' ? (
               <>
