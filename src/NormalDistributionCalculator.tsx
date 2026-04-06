@@ -492,13 +492,13 @@ const ZTable: React.FC<{ activeZ?: number | null; showSearch?: boolean }> = ({ a
               </div>
               <div className="bg-white/60 p-3 rounded-lg border border-blue-100 space-y-2 leading-relaxed">
                 <p>כדי לחשב את הערך של <InlineMath math="\Phi" /> עבור ערך <InlineMath math="z" /> שלילי, משתמשים בכלל הסימטריה:</p>
-                <div className="text-center py-1">
+                <div className="text-center py-1 overflow-x-auto">
                   <InlineMath math={`\\Phi(${actualZ?.toFixed(2)}) = 1 - \\Phi(${lookupZ.toFixed(2)})`} />
                 </div>
                 <p>1. נמצא בטבלה את הערך החיובי <InlineMath math={`\\Phi(${lookupZ.toFixed(2)})`} />:</p>
                 <p className="mr-4">• שורה <strong>{rowVal?.toFixed(1)}</strong>, עמודה <strong>{colVal?.toFixed(2).slice(2)}</strong> ← <InlineMath math={`\\Phi(${lookupZ.toFixed(2)}) = ${normalCDF(lookupZ, 0, 1).toFixed(4)}`} /></p>
                 <p>2. נחסיר מ-1:</p>
-                <div className="text-center py-1">
+                <div className="text-center py-1 overflow-x-auto">
                   <InlineMath math={`1 - ${normalCDF(lookupZ, 0, 1).toFixed(4)} = ${normalCDF(actualZ!, 0, 1).toFixed(4)}`} />
                 </div>
                 <p className="font-bold text-center mt-2">לכן: <InlineMath math={`\\Phi(${actualZ?.toFixed(2)}) = ${normalCDF(actualZ!, 0, 1).toFixed(4)}`} /></p>
@@ -805,6 +805,33 @@ export default function NormalDistributionCalculator() {
           </button>
         </div>
 
+        {/* Formal Notation Header - Full Width */}
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="lg:col-span-12 mb-8"
+        >
+          <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-indigo-600 to-blue-500" />
+            <div className="text-blue-600/60 text-[11px] font-bold uppercase tracking-[0.2em] mb-4">הגדרה פורמלית של ההתפלגות הנורמלית</div>
+            <div className="py-4 px-2" dir="ltr">
+              <div className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-slate-900 tracking-tighter drop-shadow-sm">
+                <InlineMath math={`X \\sim N(\\mu = ${mean}, \\sigma^2 = ${(stdDev * stdDev).toFixed(2)})`} />
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-center gap-6 text-xs font-bold text-slate-400">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-blue-500" />
+                תוחלת: {mean}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-indigo-500" />
+                שונות: {(stdDev * stdDev).toFixed(2)}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
         {/* Input Controls & Main Content */}
         {mode === 'table' ? (
           <section className="lg:col-span-12">
@@ -829,29 +856,27 @@ export default function NormalDistributionCalculator() {
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
             {/* Hero Block - Distribution Notation */}
             <div className="mb-8">
-              <div className="p-5 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg shadow-blue-200 flex flex-col items-center justify-center gap-3 overflow-hidden relative" dir="ltr">
+              {/* Explanation Box */}
+              <div className="p-6 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg shadow-blue-200 relative overflow-hidden" dir="ltr">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl" />
                 <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-400/20 rounded-full -ml-12 -mb-12 blur-xl" />
                 
-                <Tooltip content="הגדרה פורמלית: המשתנה X מתפלג נורמלית עם תוחלת ושונות">
-                  <span className="text-white font-black text-2xl sm:text-3xl tracking-tight whitespace-nowrap cursor-help drop-shadow-sm">
-                    <InlineMath math={`X \\sim N(\\mu = ${mean}, \\sigma^2 = ${(stdDev * stdDev).toFixed(2)})`} />
-                  </span>
-                </Tooltip>
-                <div className="text-blue-100/80 text-[10px] font-bold uppercase tracking-widest">Normal Distribution Notation</div>
-              </div>
-              
-              <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 leading-relaxed">
-                <p className="flex items-start gap-2">
-                  <Info size={14} className="text-blue-500 shrink-0 mt-0.5" />
-                  <span>
-                    התפלגות נורמלית מוגדרת ע"י <strong>תוחלת (μ)</strong> ו-<strong>שונות (σ²)</strong>. 
-                    השונות היא <strong>סטיית התקן בריבוע</strong>: 
-                    <span dir="ltr" className="inline-block mx-1 font-bold text-blue-700">
-                      <InlineMath math={`\\sigma^2 = ${stdDev}^2 = ${(stdDev * stdDev).toFixed(2)}`} />
-                    </span>
-                  </span>
-                </p>
+                <div className="relative z-10 text-white">
+                  <div className="flex items-start gap-3">
+                    <Info size={20} className="text-blue-200 shrink-0 mt-0.5" />
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium leading-relaxed">
+                        התפלגות נורמלית מוגדרת ע"י <strong>תוחלת (μ)</strong> ו-<strong>שונות (σ²)</strong>. 
+                      </p>
+                      <p className="text-xs text-blue-100/90 leading-relaxed">
+                        השונות היא <strong>סטיית התקן בריבוע</strong>: 
+                        <span className="inline-block mx-1 font-bold text-white bg-white/10 px-2 py-0.5 rounded ml-2">
+                          <InlineMath math={`\\sigma^2 = ${stdDev}^2 = ${(stdDev * stdDev).toFixed(2)}`} />
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
