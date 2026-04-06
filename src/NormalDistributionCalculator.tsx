@@ -71,7 +71,7 @@ function inverseNormalCDF(p: number): number {
 
 // --- Types ---
 
-type CalcMode = 'forward' | 'inverse';
+type CalcMode = 'forward' | 'inverse' | 'table';
 type CalcType = 'below' | 'above' | 'between' | 'outside' | 'conditional';
 type CondType = 'below' | 'above' | 'between';
 
@@ -84,6 +84,41 @@ interface CalculationResult {
 }
 
 // --- Components ---
+
+const Tooltip: React.FC<{ content: string; children: React.ReactNode }> = ({ content, children }) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const showTooltip = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setIsVisible(true);
+  };
+
+  const hideTooltip = () => {
+    timeoutRef.current = setTimeout(() => {
+      setIsVisible(false);
+    }, 100);
+  };
+
+  return (
+    <div className="relative inline-block" onMouseEnter={showTooltip} onMouseLeave={hideTooltip}>
+      {children}
+      <AnimatePresence>
+        {isVisible && (
+          <motion.div
+            initial={{ opacity: 0, y: 5, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 5, scale: 0.95 }}
+            className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-slate-800 text-white text-xs rounded-lg shadow-xl pointer-events-none text-center leading-normal font-medium"
+          >
+            {content}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-800" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 const NormalChart: React.FC<{
   mean: number;
@@ -328,70 +363,128 @@ const FormattedStep: React.FC<{ text: string }> = ({ text }) => {
   const parts = text.split(/\[MATH\](.*?)\[\/MATH\]/g);
 
   return (
-    <div className={`text-slate-900 leading-relaxed font-sans font-medium text-sm md:text-base ${isResult ? 'font-bold text-blue-900 bg-blue-50/50 p-3 rounded-xl border border-blue-200 shadow-sm' : ''}`}>
+    <div className={`text-slate-900 leading-relaxed font-sans font-medium text-sm md:text-base w-full ${isResult ? 'font-bold text-blue-900 bg-blue-50/50 p-4 rounded-xl border border-blue-200 shadow-sm' : ''}`}>
       {parts.map((part, i) => {
         if (i % 2 === 1) {
+          // Heuristic for block vs inline
+          const isOnlyMath = parts.length === 3 && parts[0] === "" && parts[2] === "";
+          const hasFraction = part.includes('\\frac');
+          const hasPercentage = part.includes('%') || part.includes('\\%');
+          const hasEquals = part.includes('=');
+          
+          // Block if:
+          // 1. It has a fraction (too tall for inline)
+          // 2. It is the ONLY thing in the step AND has an equals sign (a standalone calculation)
+          // BUT: Never block if it has a percentage (usually a result/probability)
+          const shouldBeBlock = (hasFraction || (isOnlyMath && hasEquals)) && !hasPercentage;
+
+          if (shouldBeBlock) {
+            return (
+              <div key={i} className="my-4 text-center bg-slate-50/50 py-4 px-2 rounded-xl border border-slate-100 shadow-inner overflow-x-auto" dir="ltr">
+                <BlockMath math={part} />
+              </div>
+            );
+          }
+          // Inline math
           return <span key={i} dir="ltr" className="inline-block mx-1 font-bold"><InlineMath math={part} /></span>;
         }
+        // Text part
+        if (!part && parts.length > 1) return null;
         return <span key={i}>{part}</span>;
       })}
     </div>
   );
 };
 
-const ZTable: React.FC<{ activeZ: number | null }> = ({ activeZ }) => {
-  if (activeZ === null) return null;
+const ZTable: React.FC<{ activeZ?: number | null; showSearch?: boolean }> = ({ activeZ = null, showSearch = false }) => {
+  const [searchVal, setSearchVal] = useState<string>(activeZ?.toFixed(2) || '');
+  
+  if (activeZ === null && !showSearch) return null;
+  
+  // Use either activeZ from props or searchVal from input
+  const lookupZ = useMemo(() => {
+    if (activeZ !== null) return Math.abs(activeZ);
+    const parsed = parseFloat(searchVal);
+    return isNaN(parsed) ? null : Math.abs(parsed);
+  }, [activeZ, searchVal]);
 
-  // We look up the absolute value for the table (standard positive Z-table)
-  const lookupZ = Math.abs(activeZ);
-  const rowVal = Math.floor(lookupZ * 10) / 10;
-  const colVal = Math.round((lookupZ - rowVal) * 100) / 100;
+  const rowVal = lookupZ !== null ? Math.floor(lookupZ * 10) / 10 : null;
+  const colVal = lookupZ !== null ? Math.round((lookupZ - rowVal!) * 100) / 100 : null;
 
-  // Table range: 0.0 to 3.0 rows, 0.00 to 0.09 cols
-  const rows = Array.from({ length: 31 }, (_, i) => i / 10);
+  // Table range: 0.0 to 3.5 rows, 0.00 to 0.09 cols
+  const rows = Array.from({ length: 36 }, (_, i) => i / 10);
   const cols = Array.from({ length: 10 }, (_, i) => i / 100);
 
   return (
-    <div className="mt-6 overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
-      <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-700">טבלת התפלגות נורמלית סטנדרטית (Z)</h3>
-        <div className="text-xs text-slate-500">ערכי <InlineMath math="\Phi(z)" /> עבור <InlineMath math="z \ge 0" /></div>
+    <div className={`overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm ${!showSearch ? 'mt-6' : ''}`}>
+      <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-bold text-slate-700">טבלת התפלגות נורמלית סטנדרטית (Z)</h3>
+          <div className="text-xs text-slate-500">ערכי <InlineMath math="\Phi(z)" /> עבור <InlineMath math="z \ge 0" /></div>
+        </div>
+        
+        {showSearch && (
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-sm">
+            <label className="text-xs font-bold text-slate-500">חפש ערך Z:</label>
+            <input 
+              type="number" 
+              step="0.01"
+              value={searchVal}
+              onChange={(e) => setSearchVal(e.target.value)}
+              placeholder="לדוגמה: 1.96"
+              className="w-20 text-sm font-bold outline-none text-blue-600"
+            />
+          </div>
+        )}
       </div>
-      <table className="w-full text-[10px] md:text-xs border-collapse">
-        <thead>
-          <tr className="bg-slate-50">
-            <th className="p-1 border border-slate-100 text-blue-600 font-bold">Z</th>
-            {cols.map(c => <th key={c} className="p-1 border border-slate-100 text-slate-500">{c.toFixed(2).slice(2)}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(r => (
-            <tr key={r} className={r === rowVal ? 'bg-blue-50/30' : ''}>
-              <td className="p-1 border border-slate-100 font-bold text-slate-600 bg-slate-50/50">{r.toFixed(1)}</td>
-              {cols.map(c => {
-                const z = r + c;
-                const val = normalCDF(z, 0, 1);
-                const isActive = r === rowVal && Math.abs(c - colVal) < 0.001;
-                return (
-                  <td 
-                    key={c} 
-                    className={`p-1 border border-slate-100 text-center transition-all ${
-                      isActive 
-                        ? 'bg-blue-600 text-white font-bold scale-110 shadow-sm z-10 relative' 
-                        : 'text-slate-500'
-                    }`}
-                  >
-                    {val.toFixed(4)}
-                  </td>
-                );
-              })}
+      
+      <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+        <table className="w-full text-[10px] md:text-xs border-collapse">
+          <thead className="sticky top-0 z-20">
+            <tr className="bg-slate-100 shadow-sm">
+              <th className="p-2 border border-slate-200 text-blue-600 font-bold bg-slate-100">Z</th>
+              {cols.map(c => <th key={c} className="p-2 border border-slate-200 text-slate-500 bg-slate-100">{c.toFixed(2).slice(2)}</th>)}
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="p-2 bg-blue-50/50 text-[10px] text-blue-700 text-center">
-        נחפש את הערך עבור <InlineMath math={`|Z| = ${lookupZ.toFixed(2)}`} /> (שורה {rowVal.toFixed(1)}, עמודה {colVal.toFixed(2).slice(2)})
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r} className={lookupZ !== null && r === rowVal ? 'bg-blue-50/50' : ''}>
+                <td className="p-2 border border-slate-200 font-bold text-slate-600 bg-slate-50/50 sticky right-0 z-10">{r.toFixed(1)}</td>
+                {cols.map(c => {
+                  const z = r + c;
+                  const val = normalCDF(z, 0, 1);
+                  const isActive = lookupZ !== null && r === rowVal && Math.abs(c - colVal!) < 0.001;
+                  return (
+                    <td 
+                      key={c} 
+                      className={`p-2 border border-slate-200 text-center transition-all ${
+                        isActive 
+                          ? 'bg-blue-600 text-white font-bold scale-105 shadow-md z-10 relative' 
+                          : 'text-slate-500 hover:bg-slate-50'
+                      }`}
+                    >
+                      {val.toFixed(4)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
+      
+      {lookupZ !== null && (
+        <div className="p-3 bg-blue-50/50 text-xs text-blue-700 text-center font-medium border-t border-blue-100">
+          <span className="flex items-center justify-center gap-2">
+            <Info size={14} />
+            נחפש את הערך עבור <InlineMath math={`|Z| = ${lookupZ.toFixed(2)}`} />: 
+            <strong>שורה {rowVal?.toFixed(1)}</strong>, 
+            <strong>עמודה {colVal?.toFixed(2).slice(2)}</strong>
+            <span className="mx-2">←</span>
+            <InlineMath math={`\\Phi(${lookupZ.toFixed(2)}) = ${normalCDF(lookupZ, 0, 1).toFixed(4)}`} />
+          </span>
+        </div>
+      )}
     </div>
   );
 };
@@ -603,7 +696,7 @@ export default function NormalDistributionCalculator() {
 
         steps.push(`שלב 3: נציב בנוסחת ההסתברות המותנית:`);
         steps.push(`[MATH]P(A|B) = \\frac{${probAandB.toFixed(4)}}{${probB.toFixed(4)}} = ${prob.toFixed(4)}[/MATH]`);
-        steps.push(`תוצאה סופית: ההסתברות המותנית היא [MATH]${prob.toFixed(4)}[/MATH]`);
+        steps.push(`תוצאה סופית: ההסתברות המותנית היא [MATH]${prob.toFixed(4)}[/MATH] (או [MATH]${(prob * 100).toFixed(2)}\\%[/MATH])`);
         
         return { probability: prob, z1: (x1-mean)/stdDev, steps };
       
@@ -611,6 +704,23 @@ export default function NormalDistributionCalculator() {
         return { probability: 0, z1: 0, steps: [] };
     }
   }, [mean, stdDev, type, x1, x2, condType, condX1, condX2, mode, percentile, inverseType]);
+
+  // Group steps to avoid numbering math blocks separately
+  const stepGroups = useMemo(() => {
+    const groups: string[][] = [];
+    result.steps.forEach((step) => {
+      const lastGroup = groups[groups.length - 1];
+      const isPureMath = step.startsWith('[MATH]') && step.endsWith('[/MATH]') && !step.includes('תוצאה סופית');
+      const lastStepEndsWithColon = lastGroup && lastGroup[lastGroup.length - 1].trim().endsWith(':');
+      
+      if (lastGroup && (lastStepEndsWithColon || isPureMath)) {
+        lastGroup.push(step);
+      } else {
+        groups.push([step]);
+      }
+    });
+    return groups;
+  }, [result.steps]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100" dir="rtl">
@@ -652,232 +762,320 @@ export default function NormalDistributionCalculator() {
           >
             חישוב ערך X (אחוזון → X)
           </button>
+          <button
+            onClick={() => setMode('table')}
+            className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${
+              mode === 'table' 
+                ? 'bg-blue-600 text-white shadow-md' 
+                : 'text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            טבלת Z
+          </button>
         </div>
 
-        {/* Input Controls */}
-        <section className="lg:col-span-5 space-y-6">
+        {/* Input Controls & Main Content */}
+        {mode === 'table' ? (
+          <section className="lg:col-span-12">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200"
+            >
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-slate-900 mb-2">טבלת התפלגות נורמלית סטנדרטית</h2>
+                <p className="text-sm text-slate-500">
+                  השתמש בטבלה זו כדי למצוא את הערך של <InlineMath math="\Phi(z)" /> עבור ערכי Z שונים. 
+                  ניתן להזין ערך Z ספציפי בשדה החיפוש כדי להבליט אותו בטבלה.
+                </p>
+              </div>
+              <ZTable showSearch={true} />
+            </motion.div>
+          </section>
+        ) : (
+          <>
+            <section className="lg:col-span-5 space-y-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+            {/* Hero Block - Distribution Notation */}
+            <div className="mb-8">
+              <div className="p-5 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg shadow-blue-200 flex flex-col items-center justify-center gap-3 overflow-hidden relative" dir="ltr">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl" />
+                <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-400/20 rounded-full -ml-12 -mb-12 blur-xl" />
+                
+                <Tooltip content="הגדרה פורמלית: המשתנה X מתפלג נורמלית עם תוחלת ושונות">
+                  <span className="text-white font-black text-2xl sm:text-3xl tracking-tight whitespace-nowrap cursor-help drop-shadow-sm">
+                    <InlineMath math={`X \\sim N(\\mu = ${mean}, \\sigma^2 = ${(stdDev * stdDev).toFixed(2)})`} />
+                  </span>
+                </Tooltip>
+                <div className="text-blue-100/80 text-[10px] font-bold uppercase tracking-widest">Normal Distribution Notation</div>
+              </div>
+              
+              <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 leading-relaxed">
+                <p className="flex items-start gap-2">
+                  <Info size={14} className="text-blue-500 shrink-0 mt-0.5" />
+                  <span>
+                    התפלגות נורמלית מוגדרת ע"י <strong>תוחלת (μ)</strong> ו-<strong>שונות (σ²)</strong>. 
+                    השונות היא <strong>סטיית התקן בריבוע</strong>: 
+                    <span dir="ltr" className="inline-block mx-1 font-bold text-blue-700">
+                      <InlineMath math={`\\sigma^2 = ${stdDev}^2 = ${(stdDev * stdDev).toFixed(2)}`} />
+                    </span>
+                  </span>
+                </p>
+              </div>
+            </div>
+
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <RefreshCw size={18} className="text-blue-600" />
-              פרמטרים של ההתפלגות
+              הזנת נתונים
             </h2>
 
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-2 gap-4 mb-8">
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 mr-1">תוחלת:</label>
+                <Tooltip content="הערך הממוצע של האוכלוסייה (מרכז הפעמון)">
+                  <label className="text-sm font-bold text-slate-700 mr-1 cursor-help border-b border-dotted border-slate-300">תוחלת (μ):</label>
+                </Tooltip>
                 <input 
                   type="number" 
                   value={mean} 
                   onChange={(e) => setMean(Number(e.target.value))}
-                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 mr-1">סטיית תקן:</label>
+                <Tooltip content="מדד לפיזור הנתונים סביב הממוצע">
+                  <label className="text-sm font-bold text-slate-700 mr-1 cursor-help border-b border-dotted border-slate-300">סטיית תקן (σ):</label>
+                </Tooltip>
                 <input 
                   type="number" 
                   value={stdDev} 
                   min="0.0001"
                   onChange={(e) => setStdDev(Math.max(0.0001, Number(e.target.value)))}
-                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
                 />
               </div>
             </div>
             
-            <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-100/50 shadow-sm flex items-center justify-center gap-2 sm:gap-3 overflow-x-auto" dir="ltr">
-              <div className="shrink-0 w-1.5 h-8 bg-blue-500 rounded-full" />
-              <span className="text-blue-800 font-black text-xl sm:text-2xl tracking-tight whitespace-nowrap">
-                <InlineMath math={`X \\sim N(\\mu = ${mean}, \\sigma^2 = ${(stdDev * stdDev).toFixed(2)})`} />
-              </span>
-              <div className="shrink-0 w-1.5 h-8 bg-indigo-500 rounded-full" />
-            </div>
-
-            <p className="text-xs text-slate-400 mb-8 leading-relaxed">
+            <p className="text-xs text-slate-400 mb-8 leading-relaxed italic">
               דוגמה: גובה של נערים. מתפלג נורמלית, עם תוחלת של 170 ס"מ וסטיית תקן - 5 ס"מ.
             </p>
 
-            {mode === 'forward' ? (
-              <>
-                <h2 className="text-lg font-bold text-slate-900 mb-4">סוג החישוב</h2>
-                <div className="grid grid-cols-2 gap-2 mb-8">
-                  {[
-                    { id: 'below', label: 'מתחת ל-X' },
-                    { id: 'above', label: 'מעל ל-X' },
-                    { id: 'between', label: 'בין X₁ ל-X₂' },
-                    { id: 'outside', label: 'מחוץ ל-X₁ ו-X₂' },
-                    { id: 'conditional', label: 'הסתברות מותנית' }
-                  ].map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => setType(item.id as CalcType)}
-                      className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                        type === item.id 
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-100' 
-                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <motion.div 
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-4 mb-8"
-              >
-                <h2 className="text-lg font-bold text-slate-900">סוג אחוזון</h2>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setInverseType('lower')}
-                    className={`py-3 px-4 rounded-xl text-sm font-bold transition-all border ${
-                      inverseType === 'lower' 
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-100 border-blue-600' 
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    אחוזון תחתון
-                  </button>
-                  <button
-                    onClick={() => setInverseType('upper')}
-                    className={`py-3 px-4 rounded-xl text-sm font-bold transition-all border ${
-                      inverseType === 'upper' 
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-100 border-blue-600' 
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    אחוזון עליון
-                  </button>
-                </div>
-              </motion.div>
-            )}
-
-            <div className="space-y-4">
-              {mode === 'inverse' ? (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-4"
-                >
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">הסתברות מצטברת (אחוזון) ב-%:</label>
-                    <div className="relative">
-                      <input 
-                        type="number" 
-                        value={percentile} 
-                        min="0.01"
-                        max="99.99"
-                        step="0.1"
-                        onChange={(e) => setPercentile(Math.min(99.99, Math.max(0.01, Number(e.target.value))))}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
-                      />
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
-                    </div>
-                    <p className="text-[10px] text-slate-400">
-                      {inverseType === 'lower' 
-                        ? 'לדוגמה: 90% תחתון = הערך ש-90% מהמקרים קטנים ממנו' 
-                        : 'לדוגמה: 10% עליון = הערך ש-10% מהמקרים גדולים ממנו'}
-                    </p>
-                  </div>
-                </motion.div>
-              ) : type === 'conditional' ? (
+            <AnimatePresence mode="wait">
+              {mode === 'forward' ? (
                 <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-6 p-4 bg-blue-50/30 rounded-2xl border border-blue-100"
+                  key="forward-mode"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.3 }}
                 >
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-blue-700">מאורע A (ההסתברות המבוקשת): X &lt; x</h3>
-                    <div className="grid grid-cols-1 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">ערך x:</label>
-                        <input 
-                          type="number" 
-                          value={x1} 
-                          onChange={(e) => setX1(Number(e.target.value))}
-                          className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
+                  <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    סוג החישוב
+                    <Tooltip content="בחר את השטח מתחת לעקומה שברצונך לחשב">
+                      <HelpCircle size={14} className="text-slate-400 cursor-help" />
+                    </Tooltip>
+                  </h2>
+                  <div className="grid grid-cols-2 gap-2 mb-8">
+                    {[
+                      { id: 'below', label: 'מתחת ל-X' },
+                      { id: 'above', label: 'מעל ל-X' },
+                      { id: 'between', label: 'בין X₁ ל-X₂' },
+                      { id: 'outside', label: 'מחוץ ל-X₁ ו-X₂' },
+                      { id: 'conditional', label: 'הסתברות מותנית' }
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => setType(item.id as CalcType)}
+                        className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                          type === item.id 
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-100' 
+                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
 
-                  <div className="space-y-4 border-t border-blue-100 pt-4">
-                    <h3 className="text-sm font-bold text-blue-800">מאורע B (התנאי):</h3>
-                    <div className="grid grid-cols-1 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">סוג התנאי:</label>
-                        <select 
-                          value={condType}
-                          onChange={(e) => setCondType(e.target.value as CondType)}
-                          className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
-                        >
-                          <option value="below">X &lt; x</option>
-                          <option value="above">X &gt; x</option>
-                          <option value="between">x1 &lt; X &lt; x2</option>
-                        </select>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">{condType === 'between' ? 'x1:' : 'ערך x:'}</label>
+                  <AnimatePresence mode="wait">
+                    {type === 'conditional' ? (
+                      <motion.div 
+                        key="conditional-inputs"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="space-y-6 p-4 bg-blue-50/30 rounded-2xl border border-blue-100 overflow-hidden"
+                      >
+                        <div className="space-y-4">
+                          <h3 className="text-sm font-bold text-blue-700">מאורע A (ההסתברות המבוקשת): X &lt; x</h3>
+                          <div className="grid grid-cols-1 gap-4">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-500 mb-1">ערך x:</label>
+                              <input 
+                                type="number" 
+                                value={x1} 
+                                onChange={(e) => setX1(Number(e.target.value))}
+                                className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-blue-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4 border-t border-blue-100 pt-4">
+                          <h3 className="text-sm font-bold text-blue-800">מאורע B (התנאי):</h3>
+                          <div className="grid grid-cols-1 gap-4">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">סוג התנאי:</label>
+                              <select 
+                                value={condType}
+                                onChange={(e) => setCondType(e.target.value as CondType)}
+                                className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
+                              >
+                                <option value="below">X &lt; x</option>
+                                <option value="above">X &gt; x</option>
+                                <option value="between">x1 &lt; X &lt; x2</option>
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">{condType === 'between' ? 'x1:' : 'ערך x:'}</label>
+                                <input 
+                                  type="number" 
+                                  value={condX1} 
+                                  onChange={(e) => setCondX1(Number(e.target.value))}
+                                  className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
+                                />
+                              </div>
+                              {condType === 'between' && (
+                                <div>
+                                  <label className="block text-xs font-bold text-slate-700 mb-1">x2:</label>
+                                  <input 
+                                    type="number" 
+                                    value={condX2} 
+                                    onChange={(e) => setCondX2(Number(e.target.value))}
+                                    className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ) : (
+                      <motion.div 
+                        key="standard-inputs"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="space-y-4"
+                      >
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold text-slate-800">
+                            {type === 'between' || type === 'outside' ? 'ערך X₁' : 'ערך X'}
+                          </label>
                           <input 
                             type="number" 
-                            value={condX1} 
-                            onChange={(e) => setCondX1(Number(e.target.value))}
-                            className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
+                            value={x1} 
+                            onChange={(e) => setX1(Number(e.target.value))}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
                           />
                         </div>
-                        {condType === 'between' && (
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">x2:</label>
-                            <input 
-                              type="number" 
-                              value={condX2} 
-                              onChange={(e) => setCondX2(Number(e.target.value))}
-                              className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
-                            />
-                          </div>
-                        )}
+                        
+                        <AnimatePresence>
+                          {(type === 'between' || type === 'outside') && (
+                            <motion.div 
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="space-y-2 overflow-hidden"
+                            >
+                              <label className="text-sm font-bold text-slate-800">ערך X₂</label>
+                              <input 
+                                type="number" 
+                                value={x2} 
+                                onChange={(e) => setX2(Number(e.target.value))}
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
+                              />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              ) : (
+                <motion.div 
+                  key="inverse-mode"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-8"
+                >
+                  <div className="space-y-4">
+                    <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                      סוג אחוזון
+                      <Tooltip content="אחוזון תחתון הוא השטח משמאל, אחוזון עליון הוא השטח מימין">
+                        <HelpCircle size={14} className="text-slate-400 cursor-help" />
+                      </Tooltip>
+                    </h2>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setInverseType('lower')}
+                        className={`py-3 px-4 rounded-xl text-sm font-bold transition-all border ${
+                          inverseType === 'lower' 
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-100 border-blue-600' 
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        אחוזון תחתון
+                      </button>
+                      <button
+                        onClick={() => setInverseType('upper')}
+                        className={`py-3 px-4 rounded-xl text-sm font-bold transition-all border ${
+                          inverseType === 'upper' 
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-100 border-blue-600' 
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        אחוזון עליון
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-800">הסתברות מצטברת (אחוזון) ב-%:</label>
+                      <div className="relative">
+                        <input 
+                          type="number" 
+                          value={percentile} 
+                          min="0.01"
+                          max="99.99"
+                          step="0.1"
+                          onChange={(e) => setPercentile(Math.min(99.99, Math.max(0.01, Number(e.target.value))))}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
+                        />
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
                       </div>
+                      <p className="text-[10px] text-slate-400">
+                        {inverseType === 'lower' 
+                          ? 'לדוגמה: 90% תחתון = הערך ש-90% מהמקרים קטנים ממנו' 
+                          : 'לדוגמה: 10% עליון = הערך ש-10% מהמקרים גדולים ממנו'}
+                      </p>
                     </div>
                   </div>
                 </motion.div>
-              ) : (
-                <>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">
-                      {type === 'between' || type === 'outside' ? 'ערך X₁' : 'ערך X'}
-                    </label>
-                    <input 
-                      type="number" 
-                      value={x1} 
-                      onChange={(e) => setX1(Number(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
-                    />
-                  </div>
-                  
-                  {(type === 'between' || type === 'outside') && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="space-y-2"
-                    >
-                      <label className="text-sm font-bold text-slate-800">ערך X₂</label>
-                      <input 
-                        type="number" 
-                        value={x2} 
-                        onChange={(e) => setX2(Number(e.target.value))}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none font-bold text-slate-900"
-                      />
-                    </motion.div>
-                  )}
-                </>
               )}
-            </div>
+            </AnimatePresence>
           </div>
 
-          <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-xl shadow-blue-200">
-            <div className="text-blue-100 text-sm mb-1">{mode === 'inverse' ? 'ערך X המחושב' : 'הסתברות (P)'}</div>
+          <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-xl shadow-blue-200 relative overflow-hidden group">
+            <div className="text-blue-100 text-sm mb-1 flex items-center gap-1">
+              {mode === 'inverse' ? 'ערך X המחושב' : 'הסתברות (P)'}
+              <Tooltip content={mode === 'inverse' ? "הערך בציר ה-X שמתאים להסתברות שצוינה" : "השטח מתחת לעקומה בטווח שנבחר"}>
+                <HelpCircle size={12} className="text-blue-200 cursor-help" />
+              </Tooltip>
+            </div>
             <div className="text-4xl font-bold">
               {mode === 'inverse' 
                 ? (result.calculatedX?.toFixed(4) ?? '0.0000')
@@ -917,8 +1115,8 @@ export default function NormalDistributionCalculator() {
               <Calculator size={18} className="text-blue-600" />
               שלבי החישוב
             </h2>
-            <div className="space-y-4">
-              {result.steps.map((step, idx) => (
+            <div className="space-y-6">
+              {stepGroups.map((group, idx) => (
                 <motion.div 
                   key={idx}
                   initial={{ opacity: 0, x: 20 }}
@@ -929,7 +1127,11 @@ export default function NormalDistributionCalculator() {
                   <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-sm font-bold text-blue-600 shrink-0 mt-0.5">
                     {idx + 1}
                   </div>
-                  <FormattedStep text={step} />
+                  <div className="flex-1 space-y-2">
+                    {group.map((step, sIdx) => (
+                      <FormattedStep key={sIdx} text={step} />
+                    ))}
+                  </div>
                 </motion.div>
               ))}
             </div>
@@ -938,6 +1140,8 @@ export default function NormalDistributionCalculator() {
             {result.z2 !== undefined && <ZTable activeZ={result.z2} />}
           </div>
         </section>
+        </>
+        )}
       </main>
 
       <footer className="max-w-5xl mx-auto px-4 py-12 text-center text-slate-500 text-sm font-bold">
