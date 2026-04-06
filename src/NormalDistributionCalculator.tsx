@@ -399,14 +399,23 @@ const FormattedStep: React.FC<{ text: string }> = ({ text }) => {
 const ZTable: React.FC<{ activeZ?: number | null; showSearch?: boolean }> = ({ activeZ = null, showSearch = false }) => {
   const [searchVal, setSearchVal] = useState<string>(activeZ?.toFixed(2) || '');
   
+  useEffect(() => {
+    if (activeZ !== null) {
+      setSearchVal(activeZ.toFixed(2));
+    }
+  }, [activeZ]);
+
   if (activeZ === null && !showSearch) return null;
   
-  // Use either activeZ from props or searchVal from input
-  const lookupZ = useMemo(() => {
-    if (activeZ !== null) return Math.abs(activeZ);
+  // The actual value being searched (could be negative)
+  const actualZ = useMemo(() => {
+    if (activeZ !== null) return activeZ;
     const parsed = parseFloat(searchVal);
-    return isNaN(parsed) ? null : Math.abs(parsed);
+    return isNaN(parsed) ? null : parsed;
   }, [activeZ, searchVal]);
+
+  const isNegative = actualZ !== null && actualZ < 0;
+  const lookupZ = actualZ !== null ? Math.abs(actualZ) : null;
 
   const rowVal = lookupZ !== null ? Math.floor(lookupZ * 10) / 10 : null;
   const colVal = lookupZ !== null ? Math.round((lookupZ - rowVal!) * 100) / 100 : null;
@@ -474,15 +483,37 @@ const ZTable: React.FC<{ activeZ?: number | null; showSearch?: boolean }> = ({ a
       </div>
       
       {lookupZ !== null && (
-        <div className="p-3 bg-blue-50/50 text-xs text-blue-700 text-center font-medium border-t border-blue-100">
-          <span className="flex items-center justify-center gap-2">
-            <Info size={14} />
-            נחפש את הערך עבור <InlineMath math={`|Z| = ${lookupZ.toFixed(2)}`} />: 
-            <strong>שורה {rowVal?.toFixed(1)}</strong>, 
-            <strong>עמודה {colVal?.toFixed(2).slice(2)}</strong>
-            <span className="mx-2">←</span>
-            <InlineMath math={`\\Phi(${lookupZ.toFixed(2)}) = ${normalCDF(lookupZ, 0, 1).toFixed(4)}`} />
-          </span>
+        <div className="p-4 bg-blue-50/50 text-xs text-blue-700 border-t border-blue-100">
+          {isNegative ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <Info size={16} />
+                חישוב עבור ערך Z שלילי ({actualZ?.toFixed(2)})
+              </div>
+              <div className="bg-white/60 p-3 rounded-lg border border-blue-100 space-y-2 leading-relaxed">
+                <p>כדי לחשב את הערך של <InlineMath math="\Phi" /> עבור ערך <InlineMath math="z" /> שלילי, משתמשים בכלל הסימטריה:</p>
+                <div className="text-center py-1">
+                  <InlineMath math={`\\Phi(${actualZ?.toFixed(2)}) = 1 - \\Phi(${lookupZ.toFixed(2)})`} />
+                </div>
+                <p>1. נמצא בטבלה את הערך החיובי <InlineMath math={`\\Phi(${lookupZ.toFixed(2)})`} />:</p>
+                <p className="mr-4">• שורה <strong>{rowVal?.toFixed(1)}</strong>, עמודה <strong>{colVal?.toFixed(2).slice(2)}</strong> ← <InlineMath math={`\\Phi(${lookupZ.toFixed(2)}) = ${normalCDF(lookupZ, 0, 1).toFixed(4)}`} /></p>
+                <p>2. נחסיר מ-1:</p>
+                <div className="text-center py-1">
+                  <InlineMath math={`1 - ${normalCDF(lookupZ, 0, 1).toFixed(4)} = ${normalCDF(actualZ!, 0, 1).toFixed(4)}`} />
+                </div>
+                <p className="font-bold text-center mt-2">לכן: <InlineMath math={`\\Phi(${actualZ?.toFixed(2)}) = ${normalCDF(actualZ!, 0, 1).toFixed(4)}`} /></p>
+              </div>
+            </div>
+          ) : (
+            <span className="flex items-center justify-center gap-2 font-medium">
+              <Info size={14} />
+              נחפש את הערך עבור <InlineMath math={`|Z| = ${lookupZ.toFixed(2)}`} />: 
+              <strong>שורה {rowVal?.toFixed(1)}</strong>, 
+              <strong>עמודה {colVal?.toFixed(2).slice(2)}</strong>
+              <span className="mx-2">←</span>
+              <InlineMath math={`\\Phi(${lookupZ.toFixed(2)}) = ${normalCDF(lookupZ, 0, 1).toFixed(4)}`} />
+            </span>
+          )}
         </div>
       )}
     </div>
