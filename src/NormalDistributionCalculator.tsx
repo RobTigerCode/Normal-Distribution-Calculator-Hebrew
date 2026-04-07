@@ -397,22 +397,53 @@ const FormattedStep: React.FC<{ text: string }> = ({ text }) => {
 };
 
 const ZTable: React.FC<{ activeZ?: number | null; showSearch?: boolean }> = ({ activeZ = null, showSearch = false }) => {
+  const [searchType, setSearchType] = useState<'z' | 'phi'>('z');
   const [searchVal, setSearchVal] = useState<string>(activeZ?.toFixed(2) || '');
+  const [phiSearchVal, setPhiSearchVal] = useState<string>('');
   
   useEffect(() => {
     if (activeZ !== null) {
       setSearchVal(activeZ.toFixed(2));
+      setSearchType('z');
     }
   }, [activeZ]);
+
+  // Table range: 0.0 to 3.5 rows, 0.00 to 0.09 cols
+  const rows = useMemo(() => Array.from({ length: 36 }, (_, i) => i / 10), []);
+  const cols = useMemo(() => Array.from({ length: 10 }, (_, i) => i / 100), []);
+
+  // Find Z by closest PHI
+  const findZByPhi = (targetPhi: number) => {
+    let closestZ = 0;
+    let minDiff = Infinity;
+    
+    for (const r of rows) {
+      for (const c of cols) {
+        const z = r + c;
+        const phi = normalCDF(z, 0, 1);
+        const diff = Math.abs(phi - targetPhi);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestZ = z;
+        }
+      }
+    }
+    return closestZ;
+  };
 
   if (activeZ === null && !showSearch) return null;
   
   // The actual value being searched (could be negative)
   const actualZ = useMemo(() => {
+    if (searchType === 'phi') {
+      const parsedPhi = parseFloat(phiSearchVal);
+      if (isNaN(parsedPhi) || parsedPhi < 0 || parsedPhi > 1) return null;
+      return findZByPhi(parsedPhi);
+    }
     if (activeZ !== null) return activeZ;
     const parsed = parseFloat(searchVal);
     return isNaN(parsed) ? null : parsed;
-  }, [activeZ, searchVal]);
+  }, [activeZ, searchVal, phiSearchVal, searchType, rows, cols]);
 
   const isNegative = actualZ !== null && actualZ < 0;
   const lookupZ = actualZ !== null ? Math.abs(actualZ) : null;
@@ -420,99 +451,229 @@ const ZTable: React.FC<{ activeZ?: number | null; showSearch?: boolean }> = ({ a
   const rowVal = lookupZ !== null ? Math.floor(lookupZ * 10) / 10 : null;
   const colVal = lookupZ !== null ? Math.round((lookupZ - rowVal!) * 100) / 100 : null;
 
-  // Table range: 0.0 to 3.5 rows, 0.00 to 0.09 cols
-  const rows = Array.from({ length: 36 }, (_, i) => i / 10);
-  const cols = Array.from({ length: 10 }, (_, i) => i / 100);
-
   return (
-    <div className={`overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm ${!showSearch ? 'mt-6' : ''}`}>
-      <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h3 className="text-sm font-bold text-slate-700">טבלת התפלגות נורמלית סטנדרטית (Z)</h3>
-          <div className="text-xs text-slate-500">ערכי <InlineMath math="\Phi(z)" /> עבור <InlineMath math="z \ge 0" /></div>
+    <div className={`overflow-hidden border border-slate-200 rounded-2xl bg-white shadow-lg ${!showSearch ? 'mt-8' : ''}`}>
+      {/* Educational Header */}
+      <div className="p-6 bg-gradient-to-br from-slate-800 to-slate-900 text-white">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-blue-500 rounded-lg shadow-lg shadow-blue-500/20">
+            <Info size={20} className="text-white" />
+          </div>
+          <h3 className="text-lg font-bold tracking-tight">איך קוראים את טבלת Z?</h3>
         </div>
         
-        {showSearch && (
-          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-sm">
-            <label className="text-xs font-bold text-slate-500">חפש ערך Z:</label>
-            <input 
-              type="number" 
-              step="0.01"
-              value={searchVal}
-              onChange={(e) => setSearchVal(e.target.value)}
-              placeholder="לדוגמה: 1.96"
-              className="w-20 text-sm font-bold outline-none text-blue-600"
-            />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/10">
+            <div className="flex items-center gap-2 text-blue-400 font-bold">
+              <div className="w-2 h-2 rounded-full bg-blue-400" />
+              ערך ה-Z (ציון התקן)
+            </div>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              מופיע <strong>בשולי הטבלה</strong>. השורה מייצגת את הספרה הראשונה אחרי הנקודה, והעמודה מייצגת את הספרה השנייה.
+            </p>
+            <div className="text-xs bg-blue-500/10 p-2 rounded border border-blue-500/20 text-blue-200">
+              דוגמה: עבור <InlineMath math="Z=1.96" />, נחפש שורה 1.9 ועמודה 0.06.
+            </div>
           </div>
-        )}
+          
+          <div className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/10">
+            <div className="flex items-center gap-2 text-emerald-400 font-bold">
+              <div className="w-2 h-2 rounded-full bg-emerald-400" />
+              ערך ה-PHI (ההסתברות)
+            </div>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              מופיע <strong>בתוך תאי הטבלה</strong>. זהו השטח מתחת לעקומה משמאל לערך ה-Z.
+            </p>
+            <div className="text-xs bg-emerald-500/10 p-2 rounded border border-emerald-500/20 text-emerald-200">
+              דוגמה: בתוך הטבלה נמצא את הערך 0.9750 שמתאים ל-Z של 1.96.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Search Controls */}
+      <div className="p-5 bg-slate-50 border-b border-slate-200">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div>
+            <h4 className="text-sm font-bold text-slate-700 mb-1">חיפוש בטבלה</h4>
+            <p className="text-xs text-slate-500">בחר סוג חיפוש והזן ערך כדי להבליט אותו</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+              <button
+                onClick={() => setSearchType('z')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  searchType === 'z' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                חיפוש לפי Z
+              </button>
+              <button
+                onClick={() => setSearchType('phi')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  searchType === 'phi' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                חיפוש לפי PHI
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+              <label className="text-xs font-bold text-slate-400 whitespace-nowrap">
+                {searchType === 'z' ? 'ערך Z:' : 'ערך PHI:'}
+              </label>
+              {searchType === 'z' ? (
+                <input 
+                  type="number" 
+                  step="0.01"
+                  value={searchVal}
+                  onChange={(e) => setSearchVal(e.target.value)}
+                  placeholder="לדוגמה: 1.96"
+                  className="w-24 text-sm font-black outline-none text-blue-600 placeholder:text-slate-300"
+                />
+              ) : (
+                <input 
+                  type="number" 
+                  step="0.0001"
+                  min="0.5"
+                  max="0.9999"
+                  value={phiSearchVal}
+                  onChange={(e) => setPhiSearchVal(e.target.value)}
+                  placeholder="לדוגמה: 0.95"
+                  className="w-24 text-sm font-black outline-none text-emerald-600 placeholder:text-slate-300"
+                />
+              )}
+            </div>
+          </div>
+        </div>
       </div>
       
-      <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-        <table className="w-full text-[10px] md:text-xs border-collapse">
-          <thead className="sticky top-0 z-20">
+      {/* Table Section */}
+      <div className="overflow-x-auto max-h-[650px] overflow-y-auto custom-scrollbar">
+        <table className="w-full text-sm md:text-base border-collapse">
+          <thead className="sticky top-0 z-30">
             <tr className="bg-slate-100 shadow-sm">
-              <th className="p-2 border border-slate-200 text-blue-600 font-bold bg-slate-100">Z</th>
-              {cols.map(c => <th key={c} className="p-2 border border-slate-200 text-slate-500 bg-slate-100">{c.toFixed(2).slice(2)}</th>)}
+              <th className="p-4 border border-slate-200 text-blue-600 font-black bg-slate-100 text-lg">Z</th>
+              {cols.map(c => {
+                const isColActive = lookupZ !== null && Math.abs(c - colVal!) < 0.001;
+                return (
+                  <th 
+                    key={c} 
+                    className={`p-4 border border-slate-200 transition-colors duration-300 font-black ${
+                      isColActive ? 'bg-indigo-600 text-white shadow-inner' : 'text-slate-500 bg-slate-100'
+                    }`}
+                  >
+                    {c.toFixed(2).slice(2)}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
-              <tr key={r} className={lookupZ !== null && r === rowVal ? 'bg-blue-50/50' : ''}>
-                <td className="p-2 border border-slate-200 font-bold text-slate-600 bg-slate-50/50 sticky right-0 z-10">{r.toFixed(1)}</td>
-                {cols.map(c => {
-                  const z = r + c;
-                  const val = normalCDF(z, 0, 1);
-                  const isActive = lookupZ !== null && r === rowVal && Math.abs(c - colVal!) < 0.001;
-                  return (
-                    <td 
-                      key={c} 
-                      className={`p-2 border border-slate-200 text-center transition-all ${
-                        isActive 
-                          ? 'bg-blue-600 text-white font-bold scale-105 shadow-md z-10 relative' 
-                          : 'text-slate-500 hover:bg-slate-50'
-                      }`}
-                    >
-                      {val.toFixed(4)}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {rows.map(r => {
+              const isRowActive = lookupZ !== null && r === rowVal;
+              return (
+                <tr key={r} className="transition-colors duration-300">
+                  <td className={`p-4 border border-slate-200 font-black sticky right-0 z-20 text-center text-lg transition-colors duration-300 ${
+                    isRowActive ? 'bg-blue-600 text-white shadow-inner' : 'text-slate-800 bg-slate-50'
+                  }`}>
+                    {r.toFixed(1)}
+                  </td>
+                  {cols.map(c => {
+                    const z = r + c;
+                    const val = normalCDF(z, 0, 1);
+                    const isColActive = lookupZ !== null && Math.abs(c - colVal!) < 0.001;
+                    const isActive = isRowActive && isColActive;
+                    
+                    return (
+                      <td 
+                        key={c} 
+                        className={`p-4 border border-slate-200 text-center transition-all duration-300 tabular-nums ${
+                          isActive 
+                            ? 'bg-blue-600 text-white font-black scale-110 shadow-2xl z-10 relative rounded-md' 
+                            : isRowActive
+                              ? 'bg-blue-100/60 text-blue-900 font-bold'
+                              : isColActive
+                                ? 'bg-indigo-100/60 text-indigo-900 font-bold'
+                                : 'text-slate-700 hover:bg-blue-50/50 font-medium'
+                        }`}
+                      >
+                        {val.toFixed(4)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
       
+      {/* Result Footer */}
       {lookupZ !== null && (
-        <div className="p-4 bg-blue-50/50 text-xs text-blue-700 border-t border-blue-100">
+        <div className="p-5 bg-blue-600 text-white border-t border-blue-700 shadow-[0_-4px_20px_rgba(37,99,235,0.1)]">
           {isNegative ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 font-bold text-sm">
-                <Info size={16} />
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 font-black text-lg">
+                <Info size={20} />
                 חישוב עבור ערך Z שלילי ({actualZ?.toFixed(2)})
               </div>
-              <div className="bg-white/60 p-3 rounded-lg border border-blue-100 space-y-2 leading-relaxed">
-                <p>כדי לחשב את הערך של <InlineMath math="\Phi" /> עבור ערך <InlineMath math="z" /> שלילי, משתמשים בכלל הסימטריה:</p>
-                <div className="text-center py-1 overflow-x-auto">
+              <div className="bg-white/10 backdrop-blur-sm p-5 rounded-2xl border border-white/20 space-y-3 leading-relaxed">
+                <p className="text-blue-100">כדי לחשב את הערך של <InlineMath math="\Phi" /> עבור ערך <InlineMath math="z" /> שלילי, משתמשים בכלל הסימטריה:</p>
+                <div className="text-center py-3 bg-black/10 rounded-xl overflow-x-auto">
                   <InlineMath math={`\\Phi(${actualZ?.toFixed(2)}) = 1 - \\Phi(${lookupZ.toFixed(2)})`} />
                 </div>
-                <p>1. נמצא בטבלה את הערך החיובי <InlineMath math={`\\Phi(${lookupZ.toFixed(2)})`} />:</p>
-                <p className="mr-4">• שורה <strong>{rowVal?.toFixed(1)}</strong>, עמודה <strong>{colVal?.toFixed(2).slice(2)}</strong> ← <InlineMath math={`\\Phi(${lookupZ.toFixed(2)}) = ${normalCDF(lookupZ, 0, 1).toFixed(4)}`} /></p>
-                <p>2. נחסיר מ-1:</p>
-                <div className="text-center py-1 overflow-x-auto">
-                  <InlineMath math={`1 - ${normalCDF(lookupZ, 0, 1).toFixed(4)} = ${normalCDF(actualZ!, 0, 1).toFixed(4)}`} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                  <div className="bg-white/5 p-3 rounded-lg border border-white/10">
+                    <p className="text-[10px] uppercase tracking-wider text-blue-200 mb-1">שלב 1: מציאת הערך החיובי</p>
+                    <p className="font-bold text-sm">
+                      שורה {rowVal?.toFixed(1)}, עמודה {colVal?.toFixed(2).slice(2)}
+                    </p>
+                    <p className="text-lg font-black mt-1">
+                      <InlineMath math={`\\Phi(${lookupZ.toFixed(2)}) = ${normalCDF(lookupZ, 0, 1).toFixed(4)}`} />
+                    </p>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-lg border border-white/10">
+                    <p className="text-[10px] uppercase tracking-wider text-blue-200 mb-1">שלב 2: חיסור מ-1</p>
+                    <p className="font-bold text-sm">
+                      <InlineMath math={`1 - ${normalCDF(lookupZ, 0, 1).toFixed(4)}`} />
+                    </p>
+                    <p className="text-lg font-black mt-1 text-emerald-300">
+                      = {normalCDF(actualZ!, 0, 1).toFixed(4)}
+                    </p>
+                  </div>
                 </div>
-                <p className="font-bold text-center mt-2">לכן: <InlineMath math={`\\Phi(${actualZ?.toFixed(2)}) = ${normalCDF(actualZ!, 0, 1).toFixed(4)}`} /></p>
+                <p className="font-black text-center text-xl pt-2 border-t border-white/10">
+                  תוצאה סופית: <InlineMath math={`\\Phi(${actualZ?.toFixed(2)}) = ${normalCDF(actualZ!, 0, 1).toFixed(4)}`} />
+                </p>
               </div>
             </div>
           ) : (
-            <span className="flex items-center justify-center gap-2 font-medium">
-              <Info size={14} />
-              נחפש את הערך עבור <InlineMath math={`|Z| = ${lookupZ.toFixed(2)}`} />: 
-              <strong>שורה {rowVal?.toFixed(1)}</strong>, 
-              <strong>עמודה {colVal?.toFixed(2).slice(2)}</strong>
-              <span className="mx-2">←</span>
-              <InlineMath math={`\\Phi(${lookupZ.toFixed(2)}) = ${normalCDF(lookupZ, 0, 1).toFixed(4)}`} />
-            </span>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <Calculator size={20} />
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-blue-200 font-bold">תוצאת חיפוש בטבלה</div>
+                  <div className="text-lg font-black">
+                    עבור <InlineMath math={`Z = ${lookupZ.toFixed(2)}`} /> נמצא <InlineMath math={`\\Phi(z) = ${normalCDF(lookupZ, 0, 1).toFixed(4)}`} />
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-sm bg-white/10 px-4 py-2 rounded-xl border border-white/20">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-blue-200 uppercase">שורה</span>
+                  <span className="font-bold">{rowVal?.toFixed(1)}</span>
+                </div>
+                <div className="w-px h-6 bg-white/20" />
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-blue-200 uppercase">עמודה</span>
+                  <span className="font-bold">{colVal?.toFixed(2).slice(2)}</span>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}
