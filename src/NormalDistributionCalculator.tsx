@@ -127,11 +127,12 @@ const NormalChart: React.FC<{
   x1: number;
   x2: number;
   condType?: CondType;
+  condTypeA?: CondType;
   condX1?: number;
   condX2?: number;
   probability: number;
   mode?: CalcMode;
-}> = ({ mean, stdDev, type, x1, x2, condType, condX1, condX2, probability, mode }) => {
+}> = ({ mean, stdDev, type, x1, x2, condType, condTypeA, condX1, condX2, probability, mode }) => {
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -190,7 +191,7 @@ const NormalChart: React.FC<{
         return [-Infinity, Infinity];
       };
 
-      const rA = getRange('below', x1, x2); 
+      const rA = getRange(condTypeA || 'below', x1, x2); 
       const rB = getRange(condType, condX1, condX2);
 
       // Layer 1: The condition (Event B) - Background layer
@@ -319,10 +320,20 @@ const NormalChart: React.FC<{
     drawXLine(mean, '#64748b', `μ=${mean.toFixed(2)}`, 25);
 
     if (type === 'conditional') {
-      drawXLine(x1, '#ef4444', `A: X<${x1.toFixed(2)}`, 45);
-      drawXLine(condX1, '#10b981', `B: ${condType === 'below' ? 'X<' : 'X>'}${condX1.toFixed(2)}`, 25);
+      const getLabel = (t: CondType | undefined, v1: number, v2: number | undefined) => {
+        if (t === 'below') return `X<${v1.toFixed(2)}`;
+        if (t === 'above') return `X>${v1.toFixed(2)}`;
+        return `${v1.toFixed(2)}<X<${v2?.toFixed(2)}`;
+      };
+
+      drawXLine(x1, '#ef4444', `A: ${getLabel(condTypeA || 'below', x1, x2)}`, 45);
+      if (condTypeA === 'between') {
+        drawXLine(x2, '#ef4444', `A: ${getLabel(condTypeA, x1, x2)}`, 65);
+      }
+
+      drawXLine(condX1 || 0, '#10b981', `B: ${getLabel(condType, condX1 || 0, condX2)}`, 25);
       if (condType === 'between' && condX2 !== undefined) {
-        drawXLine(condX2, '#10b981', `B: X<${condX2.toFixed(2)}`, 65);
+        drawXLine(condX2, '#10b981', `B: ${getLabel(condType, condX1 || 0, condX2)}`, 65);
       }
     } else if (mode === 'inverse') {
       drawXLine(x1, '#2563eb', `X=${x1.toFixed(2)}`, 25);
@@ -347,7 +358,7 @@ const NormalChart: React.FC<{
       }
     }
 
-  }, [mean, stdDev, type, x1, x2, condType, condX1, condX2, probability, mode]);
+  }, [mean, stdDev, type, x1, x2, condType, condTypeA, condX1, condX2, probability, mode]);
 
   return (
     <div className="w-full bg-white rounded-xl p-4 shadow-sm border border-slate-100 overflow-hidden">
@@ -363,7 +374,7 @@ const FormattedStep: React.FC<{ text: string }> = ({ text }) => {
   const parts = text.split(/\[MATH\](.*?)\[\/MATH\]/g);
 
   return (
-    <div className={`text-slate-900 leading-relaxed font-sans font-medium text-sm md:text-base w-full ${isResult ? 'font-bold text-blue-900 bg-blue-50/50 p-4 rounded-xl border border-blue-200 shadow-sm' : ''}`}>
+    <div className={`text-slate-900 leading-relaxed font-sans font-medium text-base md:text-lg w-full ${isResult ? 'font-bold text-blue-900 bg-blue-600/5 p-6 rounded-2xl border border-blue-200 shadow-md' : ''}`}>
       {parts.map((part, i) => {
         if (i % 2 === 1) {
           // Heuristic for block vs inline
@@ -690,6 +701,7 @@ export default function NormalDistributionCalculator() {
   const [x1, setX1] = useState<number>(165);
   const [x2, setX2] = useState<number>(175);
   const [condType, setCondType] = useState<CondType>('above');
+  const [condTypeA, setCondTypeA] = useState<CondType>('below');
   const [condX1, setCondX1] = useState<number>(160);
   const [condX2, setCondX2] = useState<number>(180);
   const [percentile, setPercentile] = useState<number>(90);
@@ -816,7 +828,7 @@ export default function NormalDistributionCalculator() {
           return [Math.min(v1, v2), Math.max(v1, v2)];
         };
 
-        const rA = getRange('below', x1, x2); 
+        const rA = getRange(condTypeA, x1, x2); 
         const rB = getRange(condType, condX1, condX2);
 
         const intersectStart = Math.max(rA[0], rB[0]);
@@ -849,6 +861,16 @@ export default function NormalDistributionCalculator() {
 
         steps.push(`נחשב הסתברות מותנית לפי הנוסחה: [MATH]P(A|B) = \\frac{P(A \\cap B)}{P(B)}[/MATH]`);
         
+        const getEventLabel = (t: CondType, v1: number, v2: number) => {
+          if (t === 'below') return `X < ${v1}`;
+          if (t === 'above') return `X > ${v1}`;
+          return `${v1} < X < ${v2}`;
+        };
+
+        steps.push(`המאורעות שלנו:`);
+        steps.push(`[MATH]A: ${getEventLabel(condTypeA, x1, x2)}[/MATH]`);
+        steps.push(`[MATH]B: ${getEventLabel(condType, condX1, condX2)}[/MATH]`);
+
         steps.push(`שלב 1: נחשב את ההסתברות של התנאי [MATH]P(B)[/MATH] באמצעות סטנדרטיזציה:`);
         if (condType === 'below') {
           steps.push(`[MATH]Z_B = \\frac{${condX1} - ${mean}}{${stdDev}} = ${zB2.toFixed(4)}[/MATH]`);
@@ -865,7 +887,7 @@ export default function NormalDistributionCalculator() {
         steps.push(`שלב 2: נחשב את הסתברות החיתוך [MATH]P(A \\cap B)[/MATH]:`);
         
         if (intersectStart < intersectEnd) {
-          steps.push(`החיתוך הוא הטווח המשותף: [MATH]${intersectStart === -Infinity ? '(-\\infty' : intersectStart} < X < ${intersectEnd === Infinity ? '\\infty)' : intersectEnd}[/MATH]`);
+          steps.push(`החיתוך הוא הטווח המשותף של המאורעות: [MATH]${intersectStart === -Infinity ? '(-\\infty' : intersectStart} < X < ${intersectEnd === Infinity ? '\\infty)' : intersectEnd}[/MATH]`);
           
           if (intersectStart !== -Infinity && intersectEnd !== Infinity) {
             steps.push(`נבצע סטנדרטיזציה לגבולות החיתוך:`);
@@ -887,7 +909,7 @@ export default function NormalDistributionCalculator() {
         }
 
         steps.push(`שלב 3: נציב בנוסחת ההסתברות המותנית:`);
-        steps.push(`[MATH]P(A|B) = \\frac{${probAandB.toFixed(4)}}{${probB.toFixed(4)}} = ${prob.toFixed(4)}[/MATH]`);
+        steps.push(`[MATH]P(A|B) = \\frac{P(A \\cap B)}{P(B)} = \\frac{${probAandB.toFixed(4)}}{${probB.toFixed(4)}} = ${prob.toFixed(4)}[/MATH]`);
         steps.push(`תוצאה סופית: ההסתברות המותנית היא [MATH]${prob.toFixed(4)}[/MATH] (או [MATH]${(prob * 100).toFixed(2)}\\%[/MATH])`);
         
         return { probability: prob, z1: (x1-mean)/stdDev, steps };
@@ -895,7 +917,7 @@ export default function NormalDistributionCalculator() {
       default:
         return { probability: 0, z1: 0, steps: [] };
     }
-  }, [mean, stdDev, type, x1, x2, condType, condX1, condX2, mode, percentile, inverseType]);
+  }, [mean, stdDev, type, x1, x2, condType, condTypeA, condX1, condX2, mode, percentile, inverseType]);
 
   // Group steps to avoid numbering math blocks separately
   const stepGroups = useMemo(() => {
@@ -1122,54 +1144,79 @@ export default function NormalDistributionCalculator() {
                         exit={{ opacity: 0, height: 0 }}
                         className="space-y-6 p-4 bg-blue-50/30 rounded-2xl border border-blue-100 overflow-hidden"
                       >
-                        <div className="space-y-4">
-                          <h3 className="text-sm font-bold text-blue-700">מאורע A (ההסתברות המבוקשת): X &lt; x</h3>
+                        <div className="space-y-6">
+                          <h3 className="text-base font-bold text-blue-700">מאורע A (ההסתברות המבוקשת):</h3>
                           <div className="grid grid-cols-1 gap-4">
                             <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">ערך x:</label>
-                              <input 
-                                type="number" 
-                                value={x1} 
-                                onChange={(e) => setX1(Number(e.target.value))}
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-blue-500"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-4 border-t border-blue-100 pt-4">
-                          <h3 className="text-sm font-bold text-blue-800">מאורע B (התנאי):</h3>
-                          <div className="grid grid-cols-1 gap-4">
-                            <div>
-                              <label className="block text-xs font-bold text-slate-700 mb-1">סוג התנאי:</label>
+                              <label className="block text-sm font-bold text-slate-700 mb-1.5">סוג המאורע:</label>
                               <select 
-                                value={condType}
-                                onChange={(e) => setCondType(e.target.value as CondType)}
-                                className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
+                                value={condTypeA}
+                                onChange={(e) => setCondTypeA(e.target.value as CondType)}
+                                className="w-full p-3 bg-white border border-slate-300 rounded-xl outline-none font-bold text-base"
                               >
                                 <option value="below">X &lt; x</option>
                                 <option value="above">X &gt; x</option>
                                 <option value="between">x1 &lt; X &lt; x2</option>
                               </select>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">{condType === 'between' ? 'x1:' : 'ערך x:'}</label>
+                                <label className="block text-sm font-bold text-slate-700 mb-1.5">{condTypeA === 'between' ? 'x1:' : 'ערך x:'}</label>
+                                <input 
+                                  type="number" 
+                                  value={x1} 
+                                  onChange={(e) => setX1(Number(e.target.value))}
+                                  className="w-full p-3 bg-white border border-slate-300 rounded-xl outline-none font-bold text-base"
+                                />
+                              </div>
+                              {condTypeA === 'between' && (
+                                <div>
+                                  <label className="block text-sm font-bold text-slate-700 mb-1.5">x2:</label>
+                                  <input 
+                                    type="number" 
+                                    value={x2} 
+                                    onChange={(e) => setX2(Number(e.target.value))}
+                                    className="w-full p-3 bg-white border border-slate-300 rounded-xl outline-none font-bold text-base"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-6 border-t border-blue-100 pt-6">
+                          <h3 className="text-base font-bold text-blue-800">מאורע B (התנאי):</h3>
+                          <div className="grid grid-cols-1 gap-4">
+                            <div>
+                              <label className="block text-sm font-bold text-slate-700 mb-1.5">סוג התנאי:</label>
+                              <select 
+                                value={condType}
+                                onChange={(e) => setCondType(e.target.value as CondType)}
+                                className="w-full p-3 bg-white border border-slate-300 rounded-xl outline-none font-bold text-base"
+                              >
+                                <option value="below">X &lt; x</option>
+                                <option value="above">X &gt; x</option>
+                                <option value="between">x1 &lt; X &lt; x2</option>
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1.5">{condType === 'between' ? 'x1:' : 'ערך x:'}</label>
                                 <input 
                                   type="number" 
                                   value={condX1} 
                                   onChange={(e) => setCondX1(Number(e.target.value))}
-                                  className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
+                                  className="w-full p-3 bg-white border border-slate-300 rounded-xl outline-none font-bold text-base"
                                 />
                               </div>
                               {condType === 'between' && (
                                 <div>
-                                  <label className="block text-xs font-bold text-slate-700 mb-1">x2:</label>
+                                  <label className="block text-sm font-bold text-slate-700 mb-1.5">x2:</label>
                                   <input 
                                     type="number" 
                                     value={condX2} 
                                     onChange={(e) => setCondX2(Number(e.target.value))}
-                                    className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none font-bold"
+                                    className="w-full p-3 bg-white border border-slate-300 rounded-xl outline-none font-bold text-base"
                                   />
                                 </div>
                               )}
@@ -1320,6 +1367,7 @@ export default function NormalDistributionCalculator() {
               x1={mode === 'inverse' ? (result.calculatedX ?? 0) : x1} 
               x2={x2} 
               condType={condType}
+              condTypeA={condTypeA}
               condX1={condX1}
               condX2={condX2}
               probability={result.probability}
